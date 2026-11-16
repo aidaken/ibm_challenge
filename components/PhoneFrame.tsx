@@ -1,49 +1,55 @@
 // ShiftFix — written by IBM Bob
 // Mac-style phone frame wrapper for the 3-phone demo layout.
+// Tab state is lifted to the parent so all 3 phones navigate together.
 
-"use client";
+import type { ReactNode } from "react";
 
-import { useState } from "react";
-
-type InnerTab = "chat" | "map" | "members";
+export type PhoneTab = "chat" | "map" | "members" | "schedule";
 
 interface Props {
   personaName: string;
   personaColor: string;
   carrier?: string;
-  children: React.ReactNode;
+  /** Chat panel content */
+  children: ReactNode;
+  /** Schedule panel content — rendered on the Schedule tab */
+  scheduleContent?: ReactNode;
   badge?: number;
   isActive?: boolean;
-  /** Show GroupMe-style Chat/Map/Members tab bar. Default true. */
-  showTabs?: boolean;
+  /** Shared tab controlled by parent */
+  activeTab: PhoneTab;
+  onTabChange: (tab: PhoneTab) => void;
 }
 
 // GroupMe members placeholder panel
 function MembersPanel({ color }: { color: string }) {
-  const members = ["Amanda", "Arlo", "Jordan", "Manager", "ShiftFix"];
-  const initials = (n: string) => n[0].toUpperCase();
+  const members = [
+    { name: "Amanda", sub: "barista · Mon–Fri" },
+    { name: "Arlo", sub: "barista · flexible" },
+    { name: "Jordan", sub: "barista · Mon–Fri" },
+    { name: "Manager", sub: "floor manager" },
+    { name: "ShiftFix", sub: "AI · shift coverage bot", isBot: true },
+  ];
   return (
     <div className="flex flex-1 flex-col overflow-y-auto bg-white px-4 py-3">
       <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-gray-400">
         {members.length} members
       </p>
       <ul className="space-y-0.5">
-        {members.map((name) => (
+        {members.map(({ name, sub, isBot }) => (
           <li key={name} className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-gray-50">
             <div
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-              style={{ background: color }}
+              style={{ background: isBot ? "#0d9488" : color }}
             >
-              {initials(name)}
+              {name[0].toUpperCase()}
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               <p className="text-[14px] font-semibold text-gray-800">{name}</p>
-              {name === "ShiftFix" && (
-                <p className="text-[11px] text-gray-400">AI · shift coverage bot</p>
-              )}
+              <p className="text-[11px] text-gray-400">{sub}</p>
             </div>
-            {name === "ShiftFix" && (
-              <span className="ml-auto rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-teal-700">
+            {isBot && (
+              <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-teal-700">
                 Bot
               </span>
             )}
@@ -58,17 +64,14 @@ function MembersPanel({ color }: { color: string }) {
 function MapPanel() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center bg-[#e8ead6] gap-3">
-      {/* Fake map tiles */}
       <svg width="220" height="160" viewBox="0 0 220 160" aria-hidden className="rounded-xl opacity-80">
         <rect width="220" height="160" fill="#e8ead6"/>
-        {/* roads */}
         <line x1="0" y1="80" x2="220" y2="80" stroke="#fff" strokeWidth="6"/>
         <line x1="110" y1="0" x2="110" y2="160" stroke="#fff" strokeWidth="6"/>
         <line x1="0" y1="40" x2="220" y2="40" stroke="#fff" strokeWidth="3" opacity="0.6"/>
         <line x1="0" y1="120" x2="220" y2="120" stroke="#fff" strokeWidth="3" opacity="0.6"/>
         <line x1="55" y1="0" x2="55" y2="160" stroke="#fff" strokeWidth="3" opacity="0.6"/>
         <line x1="165" y1="0" x2="165" y2="160" stroke="#fff" strokeWidth="3" opacity="0.6"/>
-        {/* blocks */}
         <rect x="8" y="8" width="40" height="26" rx="3" fill="#d4d6c8" opacity="0.7"/>
         <rect x="60" y="8" width="44" height="26" rx="3" fill="#d4d6c8" opacity="0.7"/>
         <rect x="116" y="8" width="40" height="26" rx="3" fill="#d4d6c8" opacity="0.7"/>
@@ -80,7 +83,6 @@ function MapPanel() {
         <rect x="170" y="90" width="42" height="26" rx="3" fill="#d4d6c8" opacity="0.7"/>
         <rect x="8" y="130" width="40" height="24" rx="3" fill="#d4d6c8" opacity="0.7"/>
         <rect x="116" y="130" width="40" height="24" rx="3" fill="#d4d6c8" opacity="0.7"/>
-        {/* pin */}
         <circle cx="110" cy="80" r="10" fill="#E74C3C"/>
         <circle cx="110" cy="80" r="4" fill="white"/>
       </svg>
@@ -90,17 +92,24 @@ function MapPanel() {
   );
 }
 
+const TABS: { id: PhoneTab; label: string }[] = [
+  { id: "chat", label: "Chat" },
+  { id: "map", label: "Map" },
+  { id: "members", label: "Members" },
+  { id: "schedule", label: "Schedule" },
+];
+
 export function PhoneFrame({
   personaName,
   personaColor,
   carrier = "ShiftFix",
   children,
+  scheduleContent,
   badge = 0,
   isActive = false,
-  showTabs = true,
+  activeTab,
+  onTabChange,
 }: Props) {
-  const [innerTab, setInnerTab] = useState<InnerTab>("chat");
-
   return (
     <div
       className={`relative flex flex-col overflow-hidden rounded-[2.6rem] shadow-[0_30px_80px_rgba(0,0,0,0.28)] ring-[7px] transition-all duration-300 ${
@@ -139,7 +148,7 @@ export function PhoneFrame({
         </div>
       </div>
 
-      {/* GroupMe-style nav header: back arrow + group name + gear */}
+      {/* GroupMe-style nav header */}
       <div
         className="z-10 flex items-center gap-2 px-3 py-2 text-white"
         style={{ background: personaColor }}
@@ -154,9 +163,9 @@ export function PhoneFrame({
             <path d="M9 1L1.5 8.5L9 16" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
-        {/* Group avatar stack */}
+        {/* Avatar stack */}
         <div className="flex -space-x-2 shrink-0">
-          {["A","J","M"].map((l) => (
+          {["A", "J", "M"].map((l) => (
             <div
               key={l}
               className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white/30 text-[11px] font-bold text-white"
@@ -178,7 +187,7 @@ export function PhoneFrame({
           </div>
           <p className="truncate text-[11px] text-white/75">{carrier}</p>
         </div>
-        {/* Settings gear */}
+        {/* Gear */}
         <button
           type="button"
           aria-label="Settings"
@@ -190,34 +199,39 @@ export function PhoneFrame({
         </button>
       </div>
 
-      {/* GroupMe tab bar: Chat / Map / Members */}
-      {showTabs && (
-        <div
-          className="z-10 flex border-b border-white/20"
-          style={{ background: personaColor }}
-        >
-          {(["chat", "map", "members"] as InnerTab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setInnerTab(t)}
-              className={`flex-1 py-2 text-[12px] font-bold uppercase tracking-wide transition-all ${
-                innerTab === t
-                  ? "border-b-2 border-white text-white"
-                  : "text-white/55 hover:text-white/80"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Tab bar — Chat / Map / Members / Schedule */}
+      <div
+        className="z-10 flex overflow-x-auto border-b border-white/20 scrollbar-none"
+        style={{ background: personaColor }}
+      >
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onTabChange(id)}
+            className={`flex-1 whitespace-nowrap py-2 text-[11px] font-bold uppercase tracking-wide transition-all min-w-0 ${
+              activeTab === id
+                ? "border-b-2 border-white text-white"
+                : "text-white/55 hover:text-white/80"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* Panel content */}
       <div className="relative flex flex-1 flex-col overflow-hidden bg-white">
-        {innerTab === "chat" ? children : null}
-        {innerTab === "map" ? <MapPanel /> : null}
-        {innerTab === "members" ? <MembersPanel color={personaColor} /> : null}
+        {activeTab === "chat" ? children : null}
+        {activeTab === "map" ? <MapPanel /> : null}
+        {activeTab === "members" ? <MembersPanel color={personaColor} /> : null}
+        {activeTab === "schedule" ? (
+          <div className="flex-1 overflow-y-auto p-4">
+            {scheduleContent ?? (
+              <p className="text-center text-sm text-gray-400 pt-8">No schedule data</p>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* Home indicator */}
