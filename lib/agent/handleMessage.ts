@@ -247,15 +247,24 @@ async function handleCallOut(senderId: string, text: string, intent: Intent, con
 
 async function handleAccept(senderId: string) {
   const request = getActiveCoverageRequest();
-  if (!request || request.status !== "offering" || !request.currentOfferId) {
-    postBot("no open offer for you right now.", "dm", senderId);
+  const offers = request ? listOffersForRequest(request.id) : [];
+  const current = request?.currentOfferId
+    ? offers.find((o) => o.id === request.currentOfferId)
+    : undefined;
+  // Always reply in the open offer's DM thread so the UI (Arlo DM) shows errors.
+  const dmThread = current?.employeeId ?? senderId;
+
+  if (!request || request.status !== "offering" || !current) {
+    postBot("no open offer for you right now.", "dm", dmThread);
     return;
   }
 
-  const offers = listOffersForRequest(request.id);
-  const current = offers.find((o) => o.id === request.currentOfferId);
-  if (!current || current.employeeId !== senderId) {
-    postBot("that offer isn't yours (or it expired).", "dm", senderId);
+  if (current.employeeId !== senderId) {
+    postBot(
+      `that offer is for ${getEmployee(current.employeeId)?.name ?? "someone else"} — switch to them before saying yes.`,
+      "dm",
+      dmThread,
+    );
     return;
   }
 

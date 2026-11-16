@@ -7,10 +7,9 @@ import { AuditLog } from "@/components/audit/AuditLog";
 import { Avatar } from "@/components/chat/Avatar";
 import { ChatPanel, pickMessages } from "@/components/chat/ChatPanel";
 import { DemoControls } from "@/components/demo/DemoControls";
-import { ScriptHints } from "@/components/demo/ScriptHints";
 import { ScheduleBoard } from "@/components/schedule/ScheduleBoard";
 import { IDS } from "@/lib/db/seed";
-import type { CoverageStatus, DemoState } from "@/lib/types";
+import type { DemoState } from "@/lib/types";
 
 type Tab = "schedule" | "group" | "dm" | "audit";
 
@@ -19,17 +18,6 @@ const PERSONAS = [
   { id: IDS.arlo, label: "Arlo" },
   { id: IDS.manager, label: "Manager" },
 ] as const;
-
-function scriptStep(
-  status: CoverageStatus | undefined,
-  hasMessages: boolean,
-): "call_out" | "accept" | "confirm" | "done" | "idle" {
-  if (!status) return hasMessages ? "idle" : "call_out";
-  if (status === "filled") return "done";
-  if (status === "pending_approval") return "confirm";
-  if (status === "offering" || status === "open") return "accept";
-  return "idle";
-}
 
 export function DemoApp() {
   const [state, setState] = useState<DemoState | null>(null);
@@ -56,15 +44,23 @@ export function DemoApp() {
     if (json.state) setState(json.state);
   };
 
+  const openChat = (next: Tab) => {
+    setTab(next);
+    if (next === "dm") setPersonaId(IDS.arlo);
+  };
+
   const sendMessage = async (text: string, channel: "group" | "dm") => {
     setBusy(true);
     setError(null);
+    // Arlo's DM thread always posts as Arlo so "yes" can't be sent as Amanda by mistake.
+    const senderId = channel === "dm" ? IDS.arlo : personaId;
+    if (channel === "dm") setPersonaId(IDS.arlo);
     try {
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          senderId: personaId,
+          senderId,
           text,
           channel,
           dmPeerId: channel === "dm" ? IDS.arlo : null,
@@ -119,11 +115,6 @@ export function DemoApp() {
     [state],
   );
 
-  const activeRequest = state?.coverageRequests.find((r) =>
-    ["open", "offering", "pending_approval", "filled", "escalated"].includes(r.status),
-  );
-  const step = scriptStep(activeRequest?.status, (state?.messages.length ?? 0) > 1);
-
   if (!state) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--background)] text-[var(--ink-muted)]">
@@ -137,10 +128,11 @@ export function DemoApp() {
   const dmPreview =
     dmMessages[dmMessages.length - 1]?.text ?? "Private cover offers land here";
 
+  const chatUserId = tab === "dm" ? IDS.arlo : personaId;
+
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col lg:flex-row">
-        {/* Chat list — GroupMe-style left rail */}
         <aside className="flex w-full flex-col border-b border-[var(--divider)] bg-white lg:w-[320px] lg:border-b-0 lg:border-r">
           <div className="bg-[var(--crew-blue)] px-4 py-4 text-white">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/80">
@@ -155,7 +147,7 @@ export function DemoApp() {
           <div className="space-y-1 p-2">
             <button
               type="button"
-              onClick={() => setTab("group")}
+              onClick={() => openChat("group")}
               className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
                 tab === "group" ? "bg-sky-50" : "hover:bg-[var(--surface)]"
               }`}
@@ -175,7 +167,7 @@ export function DemoApp() {
 
             <button
               type="button"
-              onClick={() => setTab("dm")}
+              onClick={() => openChat("dm")}
               className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
                 tab === "dm" ? "bg-sky-50" : "hover:bg-[var(--surface)]"
               }`}
@@ -218,11 +210,9 @@ export function DemoApp() {
               onFastForward={fastForward}
               busy={busy}
             />
-            <ScriptHints step={step} />
           </div>
         </aside>
 
-        {/* Main pane */}
         <div className="flex min-w-0 flex-1 flex-col">
           <nav
             className="flex gap-1 overflow-x-auto border-b border-[var(--divider)] bg-white px-2 py-2"
@@ -239,8 +229,8 @@ export function DemoApp() {
               <button
                 key={id}
                 type="button"
-                data-testid={`tab-${id === "group" ? "group" : id}`}
-                onClick={() => setTab(id)}
+                data-testid={`tab-${id}`}
+                onClick={() => openChat(id)}
                 className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                   tab === id
                     ? "bg-[var(--crew-blue)] text-white"
@@ -270,7 +260,7 @@ export function DemoApp() {
                 subtitle="5 people · ShiftFix bot is here"
                 messages={groupMessages}
                 employees={state.employees}
-                currentUserId={personaId}
+                currentUserId={chatUserId}
                 memberCount={5}
                 onSend={(text) => sendMessage(text, "group")}
               />
@@ -281,7 +271,7 @@ export function DemoApp() {
                 subtitle="Direct message · cover offers"
                 messages={dmMessages}
                 employees={state.employees}
-                currentUserId={personaId}
+                currentUserId={chatUserId}
                 onSend={(text) => sendMessage(text, "dm")}
                 emptyHint="When ShiftFix finds cover, the offer shows up here."
               />

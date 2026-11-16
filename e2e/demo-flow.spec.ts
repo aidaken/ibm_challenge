@@ -20,7 +20,12 @@ test("Amanda call-out is covered by Arlo after manager confirms", async ({
   test.setTimeout(60_000);
   await page.goto("/");
 
-  await page.getByTestId("reset-demo").click();
+  await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().includes("/api/demo/reset") && res.ok(),
+    ),
+    page.getByTestId("reset-demo").click(),
+  ]);
   await page.getByTestId("tab-schedule").click();
   await expect(page.getByTestId("shift-shift_amanda_mon")).toHaveAttribute(
     "data-employee",
