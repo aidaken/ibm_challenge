@@ -1,7 +1,8 @@
 // ShiftFix — written by IBM Bob
 
-import type { DemoState } from "@/lib/types";
+import { Avatar } from "@/components/chat/Avatar";
 import { formatShiftWindow } from "@/lib/coverage/time";
+import type { DemoState } from "@/lib/types";
 
 interface Props {
   state: DemoState;
@@ -15,12 +16,14 @@ export function ScheduleBoard({ state }: Props) {
 
   return (
     <section
-      className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"
+      className="overflow-hidden bg-white shadow-[0_12px_40px_rgba(15,23,42,0.08)] ring-1 ring-black/5 sm:rounded-2xl"
       data-testid="schedule-board"
     >
-      <h2 className="text-lg font-semibold text-slate-900">Monday schedule</h2>
-      <p className="mb-4 text-sm text-slate-500">Cafe floor — demo week</p>
-      <ul className="space-y-3">
+      <header className="border-b border-[var(--divider)] bg-[var(--surface)] px-4 py-3">
+        <h2 className="text-base font-semibold text-[var(--ink)]">Monday schedule</h2>
+        <p className="text-xs text-[var(--ink-muted)]">Cafe floor · demo week</p>
+      </header>
+      <ul className="divide-y divide-[var(--divider)]">
         {mondayShifts.map((shift) => {
           const person = byId.get(shift.employeeId);
           return (
@@ -29,23 +32,24 @@ export function ScheduleBoard({ state }: Props) {
               data-testid={`shift-${shift.id}`}
               data-employee={person?.name ?? ""}
               data-status={shift.status}
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+              className="flex items-center gap-3 px-4 py-3.5"
             >
-              <div>
-                <p className="font-medium text-slate-900" data-testid="shift-employee">
+              <Avatar name={person?.name ?? "?"} size="md" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-[var(--ink)]" data-testid="shift-employee">
                   {person?.name ?? "Unassigned"}
                 </p>
-                <p className="text-sm capitalize text-slate-600">
+                <p className="text-sm capitalize text-[var(--ink-muted)]">
                   {shift.role} · {formatShiftWindow(shift.start, shift.end)}
                 </p>
               </div>
               <span
-                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
                   shift.status === "covered"
                     ? "bg-teal-100 text-teal-800"
                     : shift.status === "needs_cover"
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-slate-200 text-slate-700"
+                      ? "bg-amber-100 text-amber-900"
+                      : "bg-slate-100 text-slate-600"
                 }`}
               >
                 {shift.status.replace("_", " ")}

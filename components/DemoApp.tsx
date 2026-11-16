@@ -4,11 +4,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AuditLog } from "@/components/audit/AuditLog";
+import { Avatar } from "@/components/chat/Avatar";
 import { ChatPanel, pickMessages } from "@/components/chat/ChatPanel";
 import { DemoControls } from "@/components/demo/DemoControls";
+import { ScriptHints } from "@/components/demo/ScriptHints";
 import { ScheduleBoard } from "@/components/schedule/ScheduleBoard";
 import { IDS } from "@/lib/db/seed";
-import type { DemoState } from "@/lib/types";
+import type { CoverageStatus, DemoState } from "@/lib/types";
 
 type Tab = "schedule" | "group" | "dm" | "audit";
 
@@ -18,9 +20,20 @@ const PERSONAS = [
   { id: IDS.manager, label: "Manager" },
 ] as const;
 
+function scriptStep(
+  status: CoverageStatus | undefined,
+  hasMessages: boolean,
+): "call_out" | "accept" | "confirm" | "done" | "idle" {
+  if (!status) return hasMessages ? "idle" : "call_out";
+  if (status === "filled") return "done";
+  if (status === "pending_approval") return "confirm";
+  if (status === "offering" || status === "open") return "accept";
+  return "idle";
+}
+
 export function DemoApp() {
   const [state, setState] = useState<DemoState | null>(null);
-  const [tab, setTab] = useState<Tab>("schedule");
+  const [tab, setTab] = useState<Tab>("group");
   const [personaId, setPersonaId] = useState<string>(IDS.amanda);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,7 +78,7 @@ export function DemoApp() {
       }
       applyState(json);
       if (channel === "dm") setTab("dm");
-      else if (channel === "group") setTab("group");
+      else setTab("group");
     } finally {
       setBusy(false);
     }
@@ -78,7 +91,7 @@ export function DemoApp() {
       const res = await fetch("/api/demo/reset", { method: "POST" });
       const json = (await res.json()) as { state?: DemoState; error?: string };
       applyState(json);
-      setTab("schedule");
+      setTab("group");
       setPersonaId(IDS.amanda);
     } finally {
       setBusy(false);
@@ -106,112 +119,176 @@ export function DemoApp() {
     [state],
   );
 
+  const activeRequest = state?.coverageRequests.find((r) =>
+    ["open", "offering", "pending_approval", "filled", "escalated"].includes(r.status),
+  );
+  const step = scriptStep(activeRequest?.status, (state?.messages.length ?? 0) > 1);
+
   if (!state) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-600">
-        {error ? <p role="alert">{error}</p> : <p>Loading ShiftFix…</p>}
+      <div className="flex min-h-screen items-center justify-center bg-[var(--background)] text-[var(--ink-muted)]">
+        {error ? <p role="alert">{error}</p> : <p className="online-dot">Loading ShiftFix…</p>}
       </div>
     );
   }
 
+  const groupPreview =
+    groupMessages[groupMessages.length - 1]?.text ?? "ShiftFix is in this chat";
+  const dmPreview =
+    dmMessages[dmMessages.length - 1]?.text ?? "Private cover offers land here";
+
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_#dbeafe_0%,_#f1f5f9_45%,_#e2e8f0_100%)]">
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6">
-        <header className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-700">
+    <div className="min-h-screen bg-[var(--background)]">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col lg:flex-row">
+        {/* Chat list — GroupMe-style left rail */}
+        <aside className="flex w-full flex-col border-b border-[var(--divider)] bg-white lg:w-[320px] lg:border-b-0 lg:border-r">
+          <div className="bg-[var(--crew-blue)] px-4 py-4 text-white">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/80">
               AI Builders Challenge
             </p>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-              ShiftFix
-            </h1>
-            <p className="text-sm text-slate-600">
-              Call-out in, covered shift out — manager confirms once.
+            <h1 className="text-2xl font-bold tracking-tight">ShiftFix</h1>
+            <p className="mt-0.5 text-xs text-white/90">
+              Call-out in · covered shift out
             </p>
           </div>
-          <label className="text-sm text-slate-700">
-            Posting as{" "}
-            <select
-              data-testid="persona-select"
-              className="ml-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 font-medium"
-              value={personaId}
-              onChange={(e) => setPersonaId(e.target.value)}
-            >
-              {PERSONAS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </header>
 
-        {error ? (
-          <div
-            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-            role="alert"
-            data-testid="app-error"
-          >
-            {error}
-          </div>
-        ) : null}
-
-        <DemoControls
-          nowIso={state.nowIso}
-          onReset={resetDemo}
-          onFastForward={fastForward}
-          busy={busy}
-          error={null}
-        />
-
-        <nav className="flex flex-wrap gap-2" data-testid="tab-nav">
-          {(
-            [
-              ["schedule", "Schedule"],
-              ["group", "Team chat"],
-              ["dm", "DM · Arlo"],
-              ["audit", "Audit log"],
-            ] as const
-          ).map(([id, label]) => (
+          <div className="space-y-1 p-2">
             <button
-              key={id}
               type="button"
-              data-testid={`tab-${id}`}
-              onClick={() => setTab(id)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                tab === id
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-700 ring-1 ring-slate-200"
+              onClick={() => setTab("group")}
+              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
+                tab === "group" ? "bg-sky-50" : "hover:bg-[var(--surface)]"
               }`}
             >
-              {label}
+              <div className="relative">
+                <Avatar name="Cafe" size="lg" />
+                <span className="online-dot absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate font-semibold text-[var(--ink)]">Cafe crew</p>
+                  <span className="text-[10px] text-[var(--ink-muted)]">now</span>
+                </div>
+                <p className="truncate text-xs text-[var(--ink-muted)]">{groupPreview}</p>
+              </div>
             </button>
-          ))}
-        </nav>
 
-        <main>
-          {tab === "schedule" ? <ScheduleBoard state={state} /> : null}
-          {tab === "group" ? (
-            <ChatPanel
-              title="Cafe crew"
-              subtitle="Team chat · ShiftFix bot is here"
-              messages={groupMessages}
-              employees={state.employees}
-              onSend={(text) => sendMessage(text, "group")}
+            <button
+              type="button"
+              onClick={() => setTab("dm")}
+              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${
+                tab === "dm" ? "bg-sky-50" : "hover:bg-[var(--surface)]"
+              }`}
+            >
+              <Avatar name="Arlo" size="lg" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate font-semibold text-[var(--ink)]">Arlo</p>
+                  <span className="text-[10px] text-[var(--ink-muted)]">DM</span>
+                </div>
+                <p className="truncate text-xs text-[var(--ink-muted)]">{dmPreview}</p>
+              </div>
+            </button>
+          </div>
+
+          <div className="mt-auto space-y-2 border-t border-[var(--divider)] p-3">
+            <label className="block text-[11px] font-bold uppercase tracking-wide text-[var(--ink-muted)]">
+              Posting as
+              <select
+                data-testid="persona-select"
+                className="mt-1 w-full rounded-xl border border-[var(--divider)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--ink)]"
+                value={personaId}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPersonaId(next);
+                  if (next === IDS.arlo) setTab("dm");
+                  if (next === IDS.amanda || next === IDS.manager) setTab("group");
+                }}
+              >
+                {PERSONAS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <DemoControls
+              nowIso={state.nowIso}
+              onReset={resetDemo}
+              onFastForward={fastForward}
+              busy={busy}
             />
+            <ScriptHints step={step} />
+          </div>
+        </aside>
+
+        {/* Main pane */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <nav
+            className="flex gap-1 overflow-x-auto border-b border-[var(--divider)] bg-white px-2 py-2"
+            data-testid="tab-nav"
+          >
+            {(
+              [
+                ["group", "Chats"],
+                ["dm", "DM"],
+                ["schedule", "Schedule"],
+                ["audit", "Audit"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                data-testid={`tab-${id === "group" ? "group" : id}`}
+                onClick={() => setTab(id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  tab === id
+                    ? "bg-[var(--crew-blue)] text-white"
+                    : "text-[var(--ink-muted)] hover:bg-[var(--surface)]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          {error ? (
+            <div
+              className="mx-3 mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              role="alert"
+              data-testid="app-error"
+            >
+              {error}
+            </div>
           ) : null}
-          {tab === "dm" ? (
-            <ChatPanel
-              title="ShiftFix ↔ Arlo"
-              subtitle="Private cover offer"
-              messages={dmMessages}
-              employees={state.employees}
-              onSend={(text) => sendMessage(text, "dm")}
-              emptyHint="Offers to Arlo will show up here."
-            />
-          ) : null}
-          {tab === "audit" ? <AuditLog state={state} /> : null}
-        </main>
+
+          <main className="flex-1 p-0 sm:p-4">
+            {tab === "schedule" ? <ScheduleBoard state={state} /> : null}
+            {tab === "group" ? (
+              <ChatPanel
+                title="Cafe crew"
+                subtitle="5 people · ShiftFix bot is here"
+                messages={groupMessages}
+                employees={state.employees}
+                currentUserId={personaId}
+                memberCount={5}
+                onSend={(text) => sendMessage(text, "group")}
+              />
+            ) : null}
+            {tab === "dm" ? (
+              <ChatPanel
+                title="Arlo"
+                subtitle="Direct message · cover offers"
+                messages={dmMessages}
+                employees={state.employees}
+                currentUserId={personaId}
+                onSend={(text) => sendMessage(text, "dm")}
+                emptyHint="When ShiftFix finds cover, the offer shows up here."
+              />
+            ) : null}
+            {tab === "audit" ? <AuditLog state={state} /> : null}
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -1,40 +1,72 @@
 // ShiftFix — written by IBM Bob
 
+import { Avatar } from "@/components/chat/Avatar";
 import type { Employee, Message } from "@/lib/types";
 
 interface Props {
   message: Message;
   sender: Employee | undefined;
+  isOwn: boolean;
+  showHeader: boolean;
 }
 
-export function ChatBubble({ message, sender }: Props) {
+const NAME_COLORS = [
+  "#00AFF0",
+  "#E74C3C",
+  "#27AE60",
+  "#8E44AD",
+  "#D35400",
+  "#0D9488",
+];
+
+function nameColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return NAME_COLORS[h % NAME_COLORS.length];
+}
+
+export function ChatBubble({ message, sender, isOwn, showHeader }: Props) {
   const isBot = Boolean(sender?.isBot);
   const name = sender?.name ?? "Unknown";
 
   return (
     <div
-      className={`flex flex-col gap-0.5 ${isBot ? "items-start" : "items-start"}`}
+      className={`bubble-in flex gap-2 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
       data-testid={`msg-${message.id}`}
     >
-      <div className="flex items-center gap-1.5 px-1">
-        <span className="text-xs font-semibold text-slate-700">{name}</span>
-        {isBot ? (
-          <span
-            className="rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
-            data-testid="ai-badge"
-          >
-            AI
-          </span>
-        ) : null}
+      <div className={`w-9 shrink-0 ${showHeader ? "visible" : "invisible"}`}>
+        {!isOwn ? <Avatar name={name} isBot={isBot} size="sm" /> : null}
       </div>
-      <div
-        className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-snug ${
-          isBot
-            ? "bg-teal-50 text-teal-950 ring-1 ring-teal-200"
-            : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
-        }`}
-      >
-        {message.text}
+
+      <div className={`flex max-w-[78%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
+        {showHeader && !isOwn ? (
+          <div className="mb-0.5 flex items-center gap-1.5 px-1">
+            <span className="text-xs font-semibold" style={{ color: nameColor(name) }}>
+              {name}
+            </span>
+            {isBot ? (
+              <span
+                className="rounded px-1 py-0.5 text-[9px] font-black uppercase tracking-wide text-white"
+                style={{ background: "var(--ai)" }}
+                data-testid="ai-badge"
+              >
+                AI
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div
+          className={`px-3 py-2 text-[15px] leading-snug ${
+            isOwn
+              ? "rounded-[18px] rounded-br-[5px] bg-[var(--crew-blue)] text-white"
+              : isBot
+                ? "rounded-[18px] rounded-bl-[5px] bg-teal-50 text-teal-950 ring-1 ring-teal-200"
+                : "rounded-[18px] rounded-bl-[5px] bg-[var(--inbound)] text-[var(--ink)]"
+          }`}
+        >
+          {message.text}
+        </div>
       </div>
     </div>
   );

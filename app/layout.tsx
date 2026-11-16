@@ -1,17 +1,12 @@
 // ShiftFix — written by IBM Bob
 
 import type { Metadata } from "next";
-import { DM_Sans, Fraunces } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import "./globals.css";
 
 const sans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
-});
-
-const display = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-display",
 });
 
 export const metadata: Metadata = {
@@ -27,9 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${sans.variable} ${display.variable} font-sans antialiased`}>
-        {children}
-      </body>
+      <body className={`${sans.variable} font-sans antialiased`}>{children}</body>
     </html>
   );
 }

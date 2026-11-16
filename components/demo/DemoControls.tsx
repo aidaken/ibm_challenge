@@ -17,40 +17,49 @@ export function DemoControls({
   busy,
   error,
 }: Props) {
+  const clock = new Date(nowIso).toLocaleString("en-US", {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  });
+
   return (
     <section
-      className="rounded-2xl bg-slate-900 p-4 text-white shadow-sm"
+      className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--divider)] bg-white px-3 py-2"
       data-testid="demo-controls"
     >
-      <h2 className="text-lg font-semibold">Demo controls</h2>
-      <p className="mb-3 text-sm text-slate-300">
-        Clock: <span data-testid="demo-clock">{nowIso}</span>
+      <p className="mr-auto text-xs text-[var(--ink-muted)]">
+        Demo clock{" "}
+        <span className="font-semibold text-[var(--ink)]" data-testid="demo-clock">
+          {nowIso}
+        </span>
+        <span className="ml-1 text-[var(--ink-muted)]">({clock} UTC)</span>
       </p>
       {error ? (
-        <p className="mb-3 text-sm text-red-300" role="alert">
+        <p className="w-full text-xs text-red-600" role="alert">
           {error}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          data-testid="reset-demo"
-          disabled={busy}
-          onClick={() => void onReset()}
-          className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-900 disabled:opacity-50"
-        >
-          Reset demo data
-        </button>
-        <button
-          type="button"
-          data-testid="fast-forward"
-          disabled={busy}
-          onClick={() => void onFastForward()}
-          className="rounded-lg bg-teal-500 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          Fast forward time
-        </button>
-      </div>
+      <button
+        type="button"
+        data-testid="reset-demo"
+        disabled={busy}
+        onClick={() => void onReset()}
+        className="rounded-full border border-[var(--divider)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] disabled:opacity-50"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        data-testid="fast-forward"
+        disabled={busy}
+        onClick={() => void onFastForward()}
+        className="rounded-full bg-[var(--crew-blue)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+      >
+        Fast forward
+      </button>
     </section>
   );
 }
