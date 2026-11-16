@@ -1,27 +1,34 @@
 // ShiftFix — written by IBM Bob
-// Mac-style phone frame wrapper for the 3-phone demo layout.
-// Tab state is lifted to the parent so all 3 phones navigate together.
+// Mac-style phone frame — fully self-contained navigation.
+// Back (←) goes to the GroupMe conversation list screen.
+// Each phone has its own independent tab state.
 
+"use client";
+
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 export type PhoneTab = "chat" | "map" | "members" | "schedule";
+
+interface Convo {
+  name: string;
+  preview: string;
+  time: string;
+  unread?: number;
+  isGroup?: boolean;
+}
 
 interface Props {
   personaName: string;
   personaColor: string;
   carrier?: string;
-  /** Chat panel content */
   children: ReactNode;
-  /** Schedule panel content — rendered on the Schedule tab */
   scheduleContent?: ReactNode;
   badge?: number;
-  isActive?: boolean;
-  /** Shared tab controlled by parent */
-  activeTab: PhoneTab;
-  onTabChange: (tab: PhoneTab) => void;
 }
 
-// GroupMe members placeholder panel
+// ── Inner panels ────────────────────────────────────────────────────────────
+
 function MembersPanel({ color }: { color: string }) {
   const members = [
     { name: "Amanda", sub: "barista · Mon–Fri" },
@@ -60,7 +67,6 @@ function MembersPanel({ color }: { color: string }) {
   );
 }
 
-// GroupMe map placeholder panel
 function MapPanel() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center bg-[#e8ead6] gap-3">
@@ -92,6 +98,84 @@ function MapPanel() {
   );
 }
 
+// ── Home screen: GroupMe conversation list ──────────────────────────────────
+
+function HomeScreen({
+  color,
+  convos,
+  onOpen,
+}: {
+  color: string;
+  convos: Convo[];
+  onOpen: () => void;
+}) {
+  return (
+    <div className="flex flex-1 flex-col bg-white overflow-hidden">
+      {/* Search bar */}
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-100">
+        <div className="flex items-center gap-2 bg-white rounded-full border border-gray-200 px-3 py-1.5">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" aria-hidden>
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <span className="text-[13px] text-gray-400">Search</span>
+        </div>
+      </div>
+
+      {/* Conversation list */}
+      <ul className="flex-1 overflow-y-auto divide-y divide-gray-50">
+        {convos.map((c, i) => (
+          <li key={c.name}>
+            <button
+              type="button"
+              onClick={i === 0 ? onOpen : undefined}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 active:bg-gray-100 transition-colors"
+            >
+              {/* Avatar */}
+              <div
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-bold text-white"
+                style={{ background: i === 0 ? color : ["#E74C3C","#8E44AD","#F39C12","#27AE60"][i % 4] }}
+              >
+                {c.name[0].toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <p className="truncate text-[14px] font-semibold text-gray-900">{c.name}</p>
+                  <span className="shrink-0 text-[11px] text-gray-400">{c.time}</span>
+                </div>
+                <p className="truncate text-[12px] text-gray-500 mt-0.5">{c.preview}</p>
+              </div>
+              {c.unread ? (
+                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-black text-white"
+                  style={{ background: color }}>
+                  {c.unread}
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Bottom nav bar */}
+      <div className="flex border-t border-gray-100 bg-white">
+        {[
+          { label: "Chats", active: true, icon: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" },
+          { label: "Contacts", active: false, icon: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" },
+          { label: "Settings", active: false, icon: "M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.32.07-.65.07-.98 0-.33-.03-.67-.07-1l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.33-.07.67-.07 1 0 .33.03.65.07.98l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66z" },
+        ].map(({ label, active, icon }) => (
+          <button key={label} type="button" className="flex flex-1 flex-col items-center gap-0.5 py-2">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill={active ? color : "#9ca3af"} aria-hidden>
+              <path d={icon}/>
+            </svg>
+            <span className="text-[9px] font-semibold" style={{ color: active ? color : "#9ca3af" }}>{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab constants ────────────────────────────────────────────────────────────
+
 const TABS: { id: PhoneTab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "map", label: "Map" },
@@ -99,25 +183,33 @@ const TABS: { id: PhoneTab; label: string }[] = [
   { id: "schedule", label: "Schedule" },
 ];
 
+// ── PhoneFrame ───────────────────────────────────────────────────────────────
+
 export function PhoneFrame({
   personaName,
   personaColor,
-  carrier = "ShiftFix",
+  carrier = "GroupMe",
   children,
   scheduleContent,
   badge = 0,
-  isActive = false,
-  activeTab,
-  onTabChange,
 }: Props) {
+  // "home" = conversation list; "conversation" = inside a chat
+  const [screen, setScreen] = useState<"home" | "conversation">("conversation");
+  const [activeTab, setActiveTab] = useState<PhoneTab>("chat");
+
+  const convos: Convo[] = [
+    { name: personaName, preview: "ShiftFix is in this chat", time: "now", unread: badge, isGroup: true },
+    { name: "Jordan", preview: "Hey are you working Saturday?", time: "2h" },
+    { name: "Manager", preview: "Schedule updated for next week", time: "Mon" },
+    { name: "Staff", preview: "Who wants extra hours?", time: "Sun", unread: 3 },
+  ];
+
   return (
     <div
-      className={`relative flex flex-col overflow-hidden rounded-[2.6rem] shadow-[0_30px_80px_rgba(0,0,0,0.28)] ring-[7px] transition-all duration-300 ${
-        isActive ? "ring-white/90 scale-[1.02]" : "ring-[#2a2a2a] scale-100"
-      }`}
+      className="relative flex flex-col overflow-hidden rounded-[2.6rem] shadow-[0_30px_80px_rgba(0,0,0,0.28)] ring-[7px] ring-[#2a2a2a]"
       style={{ background: "#1a1a1a", width: 280, minHeight: 560, maxHeight: 680 }}
     >
-      {/* Dynamic island notch */}
+      {/* Dynamic island */}
       <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2">
         <div className="h-[26px] w-[90px] rounded-full bg-black" />
       </div>
@@ -125,10 +217,10 @@ export function PhoneFrame({
       {/* Status bar */}
       <div
         className="relative z-10 flex items-center justify-between px-6 pt-[46px] pb-1 text-white/90 text-[11px] font-semibold tracking-tight"
-        style={{ background: personaColor }}
+        style={{ background: screen === "conversation" ? personaColor : "#ffffff" }}
       >
-        <span>9:41</span>
-        <div className="flex items-center gap-1.5">
+        <span style={{ color: screen === "home" ? "#111" : undefined }}>9:41</span>
+        <div className="flex items-center gap-1.5" style={{ color: screen === "home" ? "#555" : undefined }}>
           <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor" aria-hidden>
             <rect x="0" y="4" width="3" height="7" rx="0.5" opacity="0.4"/>
             <rect x="4" y="2.5" width="3" height="8.5" rx="0.5" opacity="0.6"/>
@@ -148,90 +240,112 @@ export function PhoneFrame({
         </div>
       </div>
 
-      {/* GroupMe-style nav header */}
-      <div
-        className="z-10 flex items-center gap-2 px-3 py-2 text-white"
-        style={{ background: personaColor }}
-      >
-        {/* Back chevron */}
-        <button
-          type="button"
-          aria-label="Back"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10 active:bg-white/20"
-        >
-          <svg width="10" height="17" viewBox="0 0 10 17" fill="none" aria-hidden>
-            <path d="M9 1L1.5 8.5L9 16" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        {/* Avatar stack */}
-        <div className="flex -space-x-2 shrink-0">
-          {["A", "J", "M"].map((l) => (
-            <div
-              key={l}
-              className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white/30 text-[11px] font-bold text-white"
-              style={{ background: "rgba(0,0,0,0.25)" }}
-            >
-              {l}
-            </div>
-          ))}
-        </div>
-        {/* Title + subtitle */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <p className="truncate text-[15px] font-bold leading-tight">{personaName}</p>
-            {badge > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
-                {badge > 9 ? "9+" : badge}
-              </span>
-            )}
-          </div>
-          <p className="truncate text-[11px] text-white/75">{carrier}</p>
-        </div>
-        {/* Gear */}
-        <button
-          type="button"
-          aria-label="Settings"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
-        >
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.32.07-.65.07-.98 0-.33-.03-.67-.07-1l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.33-.07.67-.07 1 0 .33.03.65.07.98l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66z"/>
-          </svg>
-        </button>
-      </div>
-
-      {/* Tab bar — Chat / Map / Members / Schedule */}
-      <div
-        className="z-10 flex overflow-x-auto border-b border-white/20 scrollbar-none"
-        style={{ background: personaColor }}
-      >
-        {TABS.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onTabChange(id)}
-            className={`flex-1 whitespace-nowrap py-2 text-[11px] font-bold uppercase tracking-wide transition-all min-w-0 ${
-              activeTab === id
-                ? "border-b-2 border-white text-white"
-                : "text-white/55 hover:text-white/80"
-            }`}
-          >
-            {label}
+      {/* ── HOME screen: GroupMe list header ── */}
+      {screen === "home" && (
+        <div className="z-10 flex items-center justify-between bg-white px-4 py-2 border-b border-gray-100">
+          <p className="text-[18px] font-black text-gray-900">Messages</p>
+          <button type="button" aria-label="New chat"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {/* Panel content */}
-      <div className="relative flex flex-1 flex-col overflow-hidden bg-white">
-        {activeTab === "chat" ? children : null}
-        {activeTab === "map" ? <MapPanel /> : null}
-        {activeTab === "members" ? <MembersPanel color={personaColor} /> : null}
-        {activeTab === "schedule" ? (
-          <div className="flex-1 overflow-y-auto p-4">
-            {scheduleContent ?? (
-              <p className="text-center text-sm text-gray-400 pt-8">No schedule data</p>
-            )}
+      {/* ── CONVERSATION screen: GroupMe nav header + tabs ── */}
+      {screen === "conversation" && (
+        <>
+          <div
+            className="z-10 flex items-center gap-2 px-3 py-2 text-white"
+            style={{ background: personaColor }}
+          >
+            {/* Back → goes to home list */}
+            <button
+              type="button"
+              aria-label="Back"
+              onClick={() => setScreen("home")}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10 active:bg-white/20 transition-colors"
+            >
+              <svg width="10" height="17" viewBox="0 0 10 17" fill="none" aria-hidden>
+                <path d="M9 1L1.5 8.5L9 16" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            {/* Avatar stack */}
+            <div className="flex -space-x-2 shrink-0">
+              {["A", "J", "M"].map((l) => (
+                <div
+                  key={l}
+                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white/30 text-[11px] font-bold text-white"
+                  style={{ background: "rgba(0,0,0,0.25)" }}
+                >
+                  {l}
+                </div>
+              ))}
+            </div>
+            {/* Title */}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-[15px] font-bold leading-tight">{personaName}</p>
+                {badge > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white">
+                    {badge > 9 ? "9+" : badge}
+                  </span>
+                )}
+              </div>
+              <p className="truncate text-[11px] text-white/75">{carrier}</p>
+            </div>
+            {/* Gear */}
+            <button type="button" aria-label="Settings"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/80 hover:bg-white/10">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.32.07-.65.07-.98 0-.33-.03-.67-.07-1l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.33-.07.67-.07 1 0 .33.03.65.07.98l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66z"/>
+              </svg>
+            </button>
           </div>
-        ) : null}
+
+          {/* Tab bar */}
+          <div className="z-10 flex border-b border-white/20" style={{ background: personaColor }}>
+            {TABS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wide transition-all ${
+                  activeTab === id
+                    ? "border-b-2 border-white text-white"
+                    : "text-white/55 hover:text-white/80"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Panel body ── */}
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        {screen === "home" ? (
+          <HomeScreen
+            color={personaColor}
+            convos={convos}
+            onOpen={() => setScreen("conversation")}
+          />
+        ) : (
+          <>
+            {activeTab === "chat" ? <div className="flex flex-1 flex-col overflow-hidden bg-white">{children}</div> : null}
+            {activeTab === "map" ? <MapPanel /> : null}
+            {activeTab === "members" ? <MembersPanel color={personaColor} /> : null}
+            {activeTab === "schedule" ? (
+              <div className="flex-1 overflow-y-auto bg-white p-3">
+                {scheduleContent ?? (
+                  <p className="text-center text-sm text-gray-400 pt-8">No schedule data</p>
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       {/* Home indicator */}

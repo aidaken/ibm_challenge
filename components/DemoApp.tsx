@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuditLog } from "@/components/audit/AuditLog";
-import { PhoneFrame, type PhoneTab } from "@/components/PhoneFrame";
+import { PhoneFrame } from "@/components/PhoneFrame";
 import { ChatPanel, pickMessages } from "@/components/chat/ChatPanel";
 import { DemoControls } from "@/components/demo/DemoControls";
 import { ScheduleBoard } from "@/components/schedule/ScheduleBoard";
@@ -20,8 +20,6 @@ export function DemoApp() {
   const [visibleState, setVisibleState] = useState<DemoState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Shared tab state — all 3 phones navigate together
-  const [activeTab, setActiveTab] = useState<PhoneTab>("chat");
   // typing channels: "group" | "dm" | null
   const [typingChannel, setTypingChannel] = useState<"group" | "dm" | null>(null);
   // unread counts per phone
@@ -248,8 +246,6 @@ export function DemoApp() {
             personaColor="#00aff0"
             carrier="GroupMe"
             badge={groupUnread}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
             scheduleContent={<ScheduleBoard state={visibleState} />}
           >
             <ChatPanel
@@ -293,8 +289,6 @@ export function DemoApp() {
             personaColor="#0d9488"
             carrier="Direct Message"
             badge={dmUnread}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
             scheduleContent={<ScheduleBoard state={visibleState} />}
           >
             <ChatPanel
@@ -320,8 +314,6 @@ export function DemoApp() {
             personaColor="#7c3aed"
             carrier="GroupMe"
             badge={0}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
             scheduleContent={<ScheduleBoard state={visibleState} />}
           >
             <ChatPanel
