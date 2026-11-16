@@ -6,13 +6,46 @@ import type { DemoState } from "@/lib/types";
 
 interface Props {
   state: DemoState;
+  compact?: boolean;
 }
 
-export function ScheduleBoard({ state }: Props) {
+export function ScheduleBoard({ state, compact }: Props) {
   const byId = new Map(state.employees.map((e) => [e.id, e]));
   const mondayShifts = state.shifts
     .filter((s) => s.start.startsWith(state.demoMondayIso))
     .sort((a, b) => a.start.localeCompare(b.start));
+
+  if (compact) {
+    return (
+      <ul className="space-y-1.5" data-testid="schedule-board">
+        {mondayShifts.map((shift) => {
+          const person = byId.get(shift.employeeId);
+          return (
+            <li
+              key={shift.id}
+              data-testid={`shift-${shift.id}`}
+              data-employee={person?.name ?? ""}
+              data-status={shift.status}
+              className="flex items-center justify-between gap-2 text-[12px]"
+            >
+              <span className="font-semibold text-white/80">{person?.name ?? "?"}</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                  shift.status === "covered"
+                    ? "bg-teal-900/60 text-teal-300"
+                    : shift.status === "needs_cover"
+                      ? "bg-amber-900/60 text-amber-300"
+                      : "bg-white/10 text-white/50"
+                }`}
+              >
+                {shift.status.replace("_", " ")}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
 
   return (
     <section

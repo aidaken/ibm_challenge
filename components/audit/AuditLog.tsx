@@ -4,12 +4,39 @@ import type { DemoState } from "@/lib/types";
 
 interface Props {
   state: DemoState;
+  compact?: boolean;
 }
 
-export function AuditLog({ state }: Props) {
+export function AuditLog({ state, compact }: Props) {
   const events = [...state.auditEvents].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
   );
+
+  if (compact) {
+    return (
+      <div data-testid="audit-log">
+        {events.length === 0 ? (
+          <p className="text-[12px] text-white/40">No events yet</p>
+        ) : (
+          <ol className="space-y-1.5">
+            {events.slice(-4).map((e, i) => (
+              <li
+                key={e.id}
+                data-testid="audit-event"
+                data-action={e.action}
+                className="flex items-start gap-2 text-[11px]"
+              >
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--crew-blue)] text-[9px] font-bold text-white">
+                  {events.length - 4 + i + 1}
+                </span>
+                <span className="text-white/70 leading-tight">{e.action} <span className="text-white/40">· {e.actor}</span></span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    );
+  }
 
   return (
     <section

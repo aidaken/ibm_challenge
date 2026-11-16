@@ -8,6 +8,7 @@ interface Props {
   onFastForward: () => Promise<void>;
   busy?: boolean;
   error?: string | null;
+  dark?: boolean;
 }
 
 export function DemoControls({
@@ -16,6 +17,7 @@ export function DemoControls({
   onFastForward,
   busy,
   error,
+  dark,
 }: Props) {
   const clock = new Date(nowIso).toLocaleString("en-US", {
     weekday: "short",
@@ -27,18 +29,23 @@ export function DemoControls({
 
   return (
     <section
-      className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--divider)] bg-white px-3 py-2"
+      className={`flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 ${
+        dark
+          ? "border border-white/10 bg-white/5"
+          : "border border-[var(--divider)] bg-white"
+      }`}
       data-testid="demo-controls"
     >
-      <p className="mr-auto text-xs text-[var(--ink-muted)]">
-        Demo clock{" "}
-        <span className="font-semibold text-[var(--ink)]" data-testid="demo-clock">
-          {nowIso}
+      <p className={`mr-auto text-xs ${dark ? "text-white/40" : "text-[var(--ink-muted)]"}`}>
+        <span
+          className={`font-semibold ${dark ? "text-white/70" : "text-[var(--ink)]"}`}
+          data-testid="demo-clock"
+        >
+          {clock} UTC
         </span>
-        <span className="ml-1 text-[var(--ink-muted)]">({clock} UTC)</span>
       </p>
       {error ? (
-        <p className="w-full text-xs text-red-600" role="alert">
+        <p className="w-full text-xs text-red-400" role="alert">
           {error}
         </p>
       ) : null}
@@ -47,7 +54,11 @@ export function DemoControls({
         data-testid="reset-demo"
         disabled={busy}
         onClick={() => void onReset()}
-        className="rounded-full border border-[var(--divider)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] disabled:opacity-50"
+        className={`rounded-full border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+          dark
+            ? "border-white/20 bg-white/10 text-white"
+            : "border-[var(--divider)] bg-[var(--surface)] text-[var(--ink)]"
+        }`}
       >
         Reset
       </button>
@@ -58,7 +69,7 @@ export function DemoControls({
         onClick={() => void onFastForward()}
         className="rounded-full bg-[var(--crew-blue)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
       >
-        Fast forward
+        Fast forward ⚡
       </button>
     </section>
   );
