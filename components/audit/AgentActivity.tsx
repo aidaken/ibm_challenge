@@ -5,6 +5,8 @@ import type { DemoState } from "@/lib/types";
 
 interface Props {
   state: DemoState;
+  /** Side panel copy — uses a different testid so e2e stays unique */
+  panel?: boolean;
 }
 
 const ACTION_ICONS: Record<string, string> = {
@@ -57,18 +59,19 @@ function actorBadge(actor: string): string {
 function actorColor(actor: string): string {
   if (actor === "agent") return "#0d9488";
   if (actor === "manager") return "#7c3aed";
-  return "#00aff0";
+  return "#0d9488";
 }
 
-export function AgentActivity({ state }: Props) {
+export function AgentActivity({ state, panel = false }: Props) {
   const events = [...state.auditEvents].sort((a, b) =>
     a.timestamp.localeCompare(b.timestamp),
   );
+  const testId = panel ? "audit-log-panel" : "audit-log";
 
   if (events.length === 0) {
     return (
       <div
-        data-testid="audit-log"
+        data-testid={testId}
         className="rounded-2xl border border-[var(--divider)] bg-white p-6 text-center"
       >
         <p className="text-sm text-[var(--ink-muted)]">
@@ -79,7 +82,7 @@ export function AgentActivity({ state }: Props) {
   }
 
   return (
-    <div data-testid="audit-log" className="space-y-1">
+    <div data-testid={testId} className="space-y-1">
       <div className="mb-4">
         <h2 className="text-base font-bold text-[var(--ink)]">Agent Activity</h2>
         <p className="text-xs text-[var(--ink-muted)]">Every decision and the reason behind it</p>

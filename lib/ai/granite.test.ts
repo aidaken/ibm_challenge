@@ -41,6 +41,17 @@ describe("mockInterpret (rules interpreter)", () => {
     const result = { ...interpretation, provider: "rules" as const, latencyMs: 0 };
     expect(needsClarification(result)).toBe(true);
   });
+
+  it("treats small talk as high-confidence other (no clarify)", () => {
+    for (const msg of ["thanks", "thank u guys", "ok", "lol", "cool"]) {
+      const r = mockInterpret(msg);
+      expect(r.intent).toBe("other");
+      expect(r.confidence).toBeGreaterThanOrEqual(0.9);
+      expect(
+        needsClarification({ ...r, provider: "rules", latencyMs: 0 }),
+      ).toBe(false);
+    }
+  });
 });
 
 const BASE_CTX = {

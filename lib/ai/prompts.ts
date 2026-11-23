@@ -23,12 +23,14 @@ Intent definitions:
 - decline: worker refuses a cover offer
 - partial_availability: worker can cover only part of the shift (include available_from/available_to)
 - question: asking for information
-- other: anything else
+- other: anything else (including small talk like thanks/ok/lol — use confidence 0.95 for pure acknowledgements)
 
 Confidence guidance:
 - Use 0.9+ only when the intent is unambiguous
+- Use 0.95 for pure small talk (thanks, ok, lol) as intent other
 - Use 0.5-0.7 when you are unsure
 - Use <0.7 when the message could mean multiple things
+- Do NOT treat "thanks" / "ok" / "lol" as questions
 
 Context:
 - Sender: ${ctx.senderName} (${ctx.senderRole})

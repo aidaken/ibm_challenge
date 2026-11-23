@@ -13,7 +13,27 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:3000",
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "iphone-13",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+    {
+      name: "android-small",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 360, height: 800 },
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
+  ],
   webServer: {
     command: "npm run dev -- --port 3000",
     url: "http://127.0.0.1:3000",

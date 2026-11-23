@@ -2,15 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentActivity } from "@/components/audit/AgentActivity";
-import { ChatPanel, pickMessages } from "@/components/chat/ChatPanel";
+import { type ChatRowData } from "@/components/chat/ChatRow";
+import { ChatList } from "@/components/chat/ChatList";
+import { Conversation, pickMessages } from "@/components/chat/Conversation";
 import { ScheduleBoard } from "@/components/schedule/ScheduleBoard";
+import { AdminDrawer } from "@/components/shell/AdminDrawer";
+import { BottomTabs } from "@/components/shell/BottomTabs";
+import { LeftRail, type ShellSection } from "@/components/shell/LeftRail";
 import {
   clearBrowserState,
   loadBrowserState,
   saveBrowserState,
 } from "@/lib/db/browserStore";
 import { IDS } from "@/lib/db/seed";
-import type { DemoState } from "@/lib/types";
+import type { DemoState, Offer } from "@/lib/types";
 
 type StoreBackend = "supabase" | "memory";
 
@@ -21,195 +26,32 @@ interface StatePayload {
 }
 
 const BOT_DELAY_MS = 1800;
+const TEAM_CHAT_ID = "group";
 
-type Tab = "group" | "dm" | "schedule" | "audit";
+type ActiveChat = string | null; // TEAM_CHAT_ID or employee id for DM
 
-// ── Hidden admin drawer ──────────────────────────────────────────────────────
-
-function AdminDrawer({
-  nowIso,
-  busy,
-  onReset,
-  onFastForward,
-}: {
-  nowIso: string;
-  busy: boolean;
-  onReset: () => Promise<void>;
-  onFastForward: () => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const clock = new Date(nowIso).toLocaleString("en-US", {
-    weekday: "short",
+function shortTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
     timeZone: "UTC",
   });
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Admin controls"
-        onClick={() => setOpen((v) => !v)}
-        className="rounded-full border border-white/10 bg-white/5 p-1.5 text-white/30 hover:text-white/60 transition-colors"
-        style={{ fontSize: 14 }}
-      >
-        ⚙
-      </button>
-      {open && (
-        <div className="absolute right-4 top-16 z-50 rounded-2xl border border-white/10 bg-[#1a1a1a] p-4 shadow-2xl min-w-[220px]">
-          <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-white/30">Admin</p>
-          <p className="mb-3 text-xs text-white/50">
-            <span className="font-semibold text-white/70" data-testid="demo-clock">{clock} UTC</span>
-          </p>
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              data-testid="reset-demo"
-              disabled={busy}
-              onClick={async () => { setOpen(false); await onReset(); }}
-              className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-            >
-              Reset demo
-            </button>
-            <button
-              type="button"
-              data-testid="fast-forward"
-              disabled={busy}
-              onClick={async () => { setOpen(false); await onFastForward(); }}
-              className="rounded-xl bg-amber-500/80 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-            >
-              Fast forward ⚡
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
 }
-
-// ── Tab bar ──────────────────────────────────────────────────────────────────
-
-function TabBar({
-  active,
-  onSelect,
-  dmLabel,
-  unreadGroup,
-  unreadDm,
-}: {
-  active: Tab;
-  onSelect: (t: Tab) => void;
-  dmLabel: string;
-  unreadGroup: number;
-  unreadDm: number;
-}) {
-  const tabs: { id: Tab; label: string; unread?: number }[] = [
-    { id: "group", label: "Team chat", unread: unreadGroup },
-    { id: "dm", label: `DM · ${dmLabel}`, unread: unreadDm },
-    { id: "schedule", label: "Schedule" },
-    { id: "audit", label: "Agent Activity" },
-  ];
-  return (
-    <div className="flex border-b border-white/10 bg-[#111]">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          data-testid={`tab-${t.id}`}
-          onClick={() => onSelect(t.id)}
-          className={`relative flex-1 py-2.5 text-[11px] font-bold uppercase tracking-wide transition-all ${
-            active === t.id
-              ? "border-b-2 border-[var(--crew-blue)] text-white"
-              : "text-white/40 hover:text-white/70"
-          }`}
-        >
-          {t.label}
-          {t.unread ? (
-            <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">
-              {t.unread > 9 ? "9+" : t.unread}
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ── Persona selector ─────────────────────────────────────────────────────────
-
-function PersonaBar({
-  employees,
-  currentId,
-  onSelect,
-}: {
-  employees: DemoState["employees"];
-  currentId: string;
-  onSelect: (id: string) => void;
-}) {
-  const humans = employees.filter((e) => !e.isBot && !e.isManager);
-  const manager = employees.find((e) => e.isManager);
-
-  return (
-    <div className="flex items-center gap-2 border-b border-white/5 bg-[#0d0d0d] px-4 py-2">
-      <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 mr-1">You:</span>
-      <select
-        data-testid="persona-select"
-        value={currentId}
-        onChange={(e) => onSelect(e.target.value)}
-        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-white outline-none focus:border-[var(--crew-blue)]"
-      >
-        {humans.map((e) => (
-          <option key={e.id} value={e.id}>{e.name}</option>
-        ))}
-        {manager && <option value={manager.id}>{manager.name}</option>}
-      </select>
-      <span className="ml-auto text-[10px] text-white/20">
-        {employees.find((e) => e.id === currentId)?.roles.join(", ")}
-      </span>
-    </div>
-  );
-}
-
-// ── DM quick-reply buttons ───────────────────────────────────────────────────
-
-function DmQuickReplies({ onSend, disabled }: { onSend: (text: string) => Promise<void>; disabled: boolean }) {
-  return (
-    <div className="flex gap-2 px-3 py-2 border-t border-[var(--divider)] bg-white">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => void onSend("yes")}
-        className="rounded-full bg-teal-500 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-40"
-      >
-        ✓ Accept
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => void onSend("no")}
-        className="rounded-full bg-red-400 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-40"
-      >
-        ✗ Decline
-      </button>
-    </div>
-  );
-}
-
-// ── Main app ─────────────────────────────────────────────────────────────────
 
 export function DemoApp() {
   const [visibleState, setVisibleState] = useState<DemoState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("group");
+  const [section, setSection] = useState<ShellSection>("chats");
+  const [activeChat, setActiveChat] = useState<ActiveChat>(TEAM_CHAT_ID);
+  const [mobileInConvo, setMobileInConvo] = useState(false);
   const [currentPersonaId, setCurrentPersonaId] = useState<string>(IDS.amanda);
   const [typingChannel, setTypingChannel] = useState<"group" | "dm" | null>(null);
+  const [typingPeer, setTypingPeer] = useState<string | null>(null);
 
-  const seenGroupRef = useRef(0);
-  const seenDmRef = useRef(0);
-  const [groupUnread, setGroupUnread] = useState(0);
-  const [dmUnread, setDmUnread] = useState(0);
+  const seenRef = useRef<Record<string, number>>({ [TEAM_CHAT_ID]: 0 });
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
   const backendRef = useRef<StoreBackend>("memory");
   const trueStateRef = useRef<DemoState | null>(null);
   const botRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,27 +59,20 @@ export function DemoApp() {
   const applyServerState = useCallback((state: DemoState, be?: StoreBackend) => {
     trueStateRef.current = state;
     setVisibleState(state);
-    if (be) {
-      backendRef.current = be;
-    }
-    if ((be ?? backendRef.current) === "memory") {
-      saveBrowserState(state);
-    }
+    if (be) backendRef.current = be;
+    if ((be ?? backendRef.current) === "memory") saveBrowserState(state);
   }, []);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/state", { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to load demo state");
     const json = (await res.json()) as StatePayload & DemoState;
-    // Support both { state, backend } and legacy bare DemoState
     const state = json.state ?? (json as DemoState);
     const be = json.backend ?? "memory";
     backendRef.current = be;
 
     if (be === "memory") {
       const local = loadBrowserState();
-      // Only hydrate from localStorage when it is ahead of (or equal to) the server.
-      // Avoids a race where a slow first refresh PUT clobbers a just-completed reset.
       if (local && local.messages.length >= (state.messages?.length ?? 0)) {
         await fetch("/api/state", {
           method: "PUT",
@@ -248,10 +83,7 @@ export function DemoApp() {
         return;
       }
     }
-
-    if (!Array.isArray(state.employees)) {
-      throw new Error("Invalid demo state from server");
-    }
+    if (!Array.isArray(state.employees)) throw new Error("Invalid demo state from server");
     applyServerState(state, be);
   }, [applyServerState]);
 
@@ -261,120 +93,152 @@ export function DemoApp() {
     });
   }, [refresh]);
 
-  // DM thread follows the selected persona (you are that person in the demo).
-  // Auto-switching to currentOfferId broke split flows (Maya+Arlo pending at once).
-  const dmPeerId = currentPersonaId;
+  const botId = visibleState?.employees.find((e) => e.isBot)?.id;
 
-  const dmPersonaName = useMemo(() => {
-    if (!visibleState) return "Arlo";
-    return visibleState.employees.find((e) => e.id === dmPeerId)?.name ?? "DM";
-  }, [visibleState, dmPeerId]);
-
-  // Count unread
+  // Per-chat unread counts
   useEffect(() => {
     if (!visibleState) return;
+    const next: Record<string, number> = {};
     const groupCount = pickMessages(visibleState, "group").length;
-    const dmCount = pickMessages(visibleState, "dm", dmPeerId).length;
-    setGroupUnread(Math.max(0, groupCount - seenGroupRef.current));
-    setDmUnread(Math.max(0, dmCount - seenDmRef.current));
-  }, [visibleState, dmPeerId]);
+    next[TEAM_CHAT_ID] = Math.max(0, groupCount - (seenRef.current[TEAM_CHAT_ID] ?? 0));
 
-  const markGroupRead = () => {
-    if (!visibleState) return;
-    seenGroupRef.current = pickMessages(visibleState, "group").length;
-    setGroupUnread(0);
-  };
-  const markDmRead = () => {
-    if (!visibleState) return;
-    seenDmRef.current = pickMessages(visibleState, "dm", dmPeerId).length;
-    setDmUnread(0);
-  };
+    const peers = new Set(
+      visibleState.messages
+        .filter((m) => m.channel === "dm" && m.dmPeerId)
+        .map((m) => m.dmPeerId as string),
+    );
+    for (const peer of peers) {
+      const count = pickMessages(visibleState, "dm", peer).length;
+      next[peer] = Math.max(0, count - (seenRef.current[peer] ?? 0));
+    }
+    setUnreadMap(next);
+  }, [visibleState]);
+
+  const markRead = useCallback(
+    (chatId: string) => {
+      if (!visibleState) return;
+      if (chatId === TEAM_CHAT_ID) {
+        seenRef.current[TEAM_CHAT_ID] = pickMessages(visibleState, "group").length;
+      } else {
+        seenRef.current[chatId] = pickMessages(visibleState, "dm", chatId).length;
+      }
+      setUnreadMap((prev) => ({ ...prev, [chatId]: 0 }));
+    },
+    [visibleState],
+  );
+
+  const openChat = useCallback(
+    (chatId: string) => {
+      setActiveChat(chatId);
+      setSection("chats");
+      setMobileInConvo(true);
+      markRead(chatId);
+    },
+    [markRead],
+  );
 
   const revealBotMessages = useCallback((next: DemoState) => {
     if (botRevealTimer.current) clearTimeout(botRevealTimer.current);
     botRevealTimer.current = setTimeout(() => {
       setVisibleState(next);
       setTypingChannel(null);
+      setTypingPeer(null);
     }, BOT_DELAY_MS);
   }, []);
 
-  const sendMessage = useCallback(async (
-    text: string,
-    channel: "group" | "dm",
-    senderId: string,
-    peerIdOverride?: string,
-  ) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const peerId = peerIdOverride ?? (channel === "dm" ? dmPeerId : null);
-      const res = await fetch("/api/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderId,
-          text,
-          channel,
-          dmPeerId: peerId,
-          clientState:
-            backendRef.current === "memory" ? trueStateRef.current : undefined,
-        }),
-      });
-      const json = (await res.json()) as StatePayload;
-      if (!res.ok) {
-        setError(json.error ?? "Message failed");
-        if (json.state) applyServerState(json.state, json.backend);
-        return;
-      }
-      if (json.state) {
-        const newState = json.state;
-        if (json.backend) {
-          backendRef.current = json.backend;
+  const sendMessage = useCallback(
+    async (
+      text: string,
+      channel: "group" | "dm",
+      senderId: string,
+      peerIdOverride?: string | null,
+    ) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const peerId =
+          peerIdOverride !== undefined
+            ? peerIdOverride
+            : channel === "dm"
+              ? activeChat && activeChat !== TEAM_CHAT_ID
+                ? activeChat
+                : currentPersonaId
+              : null;
+        const res = await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderId,
+            text,
+            channel,
+            dmPeerId: peerId,
+            clientState:
+              backendRef.current === "memory" ? trueStateRef.current : undefined,
+          }),
+        });
+        const json = (await res.json()) as StatePayload;
+        if (!res.ok) {
+          setError(json.error ?? "Message failed");
+          if (json.state) applyServerState(json.state, json.backend);
+          return;
         }
-        applyServerState(newState, json.backend ?? backendRef.current);
-        trueStateRef.current = newState;
+        if (json.state) {
+          const newState = json.state;
+          if (json.backend) backendRef.current = json.backend;
+          applyServerState(newState, json.backend ?? backendRef.current);
+          trueStateRef.current = newState;
 
-        const botId = newState.employees.find((e) => e.isBot)?.id;
-        const prevGroupCount = visibleState ? pickMessages(visibleState, "group").length : 0;
-        const prevDmCount = visibleState ? pickMessages(visibleState, "dm", dmPeerId).length : 0;
-        const newGroupMsgs = pickMessages(newState, "group");
-        const newDmMsgs = pickMessages(newState, "dm", dmPeerId);
-        const hasBotGroupReply = botId && newGroupMsgs.slice(prevGroupCount).some((m) => m.senderId === botId);
-        const hasBotDmReply = botId && newDmMsgs.slice(prevDmCount).some((m) => m.senderId === botId);
+          const bid = newState.employees.find((e) => e.isBot)?.id;
+          const prevGroup = visibleState ? pickMessages(visibleState, "group").length : 0;
+          const peer = peerId ?? currentPersonaId;
+          const prevDm = visibleState ? pickMessages(visibleState, "dm", peer).length : 0;
+          const newGroup = pickMessages(newState, "group");
+          const newDm = pickMessages(newState, "dm", peer);
+          const hasBotGroup =
+            bid && newGroup.slice(prevGroup).some((m) => m.senderId === bid);
+          const hasBotDm = bid && newDm.slice(prevDm).some((m) => m.senderId === bid);
 
-        if (hasBotGroupReply || hasBotDmReply) {
-          const withoutBot: DemoState = {
-            ...newState,
-            messages: newState.messages.filter((m) => {
-              if (m.senderId !== botId) return true;
-              const isNewGroup = m.channel === "group" && newGroupMsgs.indexOf(m) >= prevGroupCount;
-              const isNewDm = m.channel === "dm" && newDmMsgs.indexOf(m) >= prevDmCount;
-              return !isNewGroup && !isNewDm;
-            }),
-          };
-          setVisibleState(withoutBot);
-          setTypingChannel(hasBotGroupReply ? "group" : "dm");
-          revealBotMessages(newState);
-        } else {
-          setVisibleState(newState);
+          if (hasBotGroup || hasBotDm) {
+            const withoutBot: DemoState = {
+              ...newState,
+              messages: newState.messages.filter((m) => {
+                if (m.senderId !== bid) return true;
+                const isNewGroup =
+                  m.channel === "group" && newGroup.indexOf(m) >= prevGroup;
+                const isNewDm =
+                  m.channel === "dm" &&
+                  m.dmPeerId === peer &&
+                  newDm.indexOf(m) >= prevDm;
+                return !isNewGroup && !isNewDm;
+              }),
+            };
+            setVisibleState(withoutBot);
+            setTypingChannel(hasBotGroup ? "group" : "dm");
+            setTypingPeer(hasBotGroup ? null : peer);
+            revealBotMessages(newState);
+          } else {
+            setVisibleState(newState);
+          }
         }
+      } finally {
+        setBusy(false);
       }
-    } finally {
-      setBusy(false);
-    }
-  }, [visibleState, dmPeerId, revealBotMessages, applyServerState]);
+    },
+    [activeChat, applyServerState, currentPersonaId, revealBotMessages, visibleState],
+  );
 
   const resetDemo = async () => {
     if (botRevealTimer.current) clearTimeout(botRevealTimer.current);
     setTypingChannel(null);
+    setTypingPeer(null);
     setBusy(true);
     setError(null);
-    seenGroupRef.current = 0;
-    seenDmRef.current = 0;
-    setGroupUnread(0);
-    setDmUnread(0);
+    seenRef.current = { [TEAM_CHAT_ID]: 0 };
+    setUnreadMap({});
     setCurrentPersonaId(IDS.amanda);
-    setActiveTab("group");
+    setSection("chats");
+    setActiveChat(TEAM_CHAT_ID);
+    setMobileInConvo(false);
     clearBrowserState();
     try {
       const res = await fetch("/api/demo/reset", { method: "POST" });
@@ -389,6 +253,7 @@ export function DemoApp() {
   const fastForward = async () => {
     if (botRevealTimer.current) clearTimeout(botRevealTimer.current);
     setTypingChannel(null);
+    setTypingPeer(null);
     setBusy(true);
     setError(null);
     try {
@@ -408,135 +273,319 @@ export function DemoApp() {
     }
   };
 
+  const chatRows: ChatRowData[] = useMemo(() => {
+    if (!visibleState) return [];
+    const groupMsgs = pickMessages(visibleState, "group");
+    const lastGroup = groupMsgs[groupMsgs.length - 1];
+    const rows: ChatRowData[] = [
+      {
+        id: TEAM_CHAT_ID,
+        title: "Team Chat",
+        preview: lastGroup?.text ?? "ShiftFix is online",
+        timeLabel: lastGroup ? shortTime(lastGroup.createdAt) : "",
+        unread: unreadMap[TEAM_CHAT_ID] ?? 0,
+        isGroup: true,
+        pinned: true,
+        testId: "chat-row-group",
+      },
+    ];
+
+    const peers = new Set(
+      visibleState.messages
+        .filter((m) => m.channel === "dm" && m.dmPeerId)
+        .map((m) => m.dmPeerId as string),
+    );
+    // Always show current persona DM row so offers are discoverable
+    peers.add(currentPersonaId);
+
+    for (const peerId of peers) {
+      if (peerId === botId) continue;
+      const emp = visibleState.employees.find((e) => e.id === peerId);
+      if (!emp || emp.isBot) continue;
+      const msgs = pickMessages(visibleState, "dm", peerId);
+      const last = msgs[msgs.length - 1];
+      const pending = visibleState.offers.find(
+        (o) => o.employeeId === peerId && o.status === "pending",
+      );
+      const preview = pending
+        ? "New shift offer"
+        : (last?.text ?? "Direct message with ShiftFix");
+      rows.push({
+        id: peerId,
+        title: emp.name,
+        preview,
+        timeLabel: last ? shortTime(last.createdAt) : "",
+        unread: unreadMap[peerId] ?? 0,
+        testId: `chat-row-${emp.name.toLowerCase()}`,
+      });
+    }
+
+    return rows;
+  }, [visibleState, unreadMap, currentPersonaId, botId]);
+
+  const pendingOfferForActive: Offer | null = useMemo(() => {
+    if (!visibleState || !activeChat || activeChat === TEAM_CHAT_ID) return null;
+    return (
+      visibleState.offers.find(
+        (o) => o.employeeId === activeChat && o.status === "pending",
+      ) ??
+      visibleState.offers
+        .filter((o) => o.employeeId === activeChat)
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))[0] ??
+      null
+    );
+  }, [visibleState, activeChat]);
+
+  const offerMeta = useMemo(() => {
+    if (!visibleState || !pendingOfferForActive) {
+      return { role: "barista", start: "", end: "" };
+    }
+    const req = visibleState.coverageRequests.find(
+      (r) => r.id === pendingOfferForActive.requestId,
+    );
+    const shift = req
+      ? visibleState.shifts.find((s) => s.id === req.shiftId)
+      : undefined;
+    if (pendingOfferForActive.partId) {
+      const part = visibleState.coverageParts.find(
+        (p) => p.id === pendingOfferForActive.partId,
+      );
+      if (part) {
+        return {
+          role: shift?.role ?? "barista",
+          start: part.startsAt,
+          end: part.endsAt,
+        };
+      }
+    }
+    return {
+      role: shift?.role ?? "barista",
+      start: shift?.start ?? "",
+      end: shift?.end ?? "",
+    };
+  }, [visibleState, pendingOfferForActive]);
+
   const groupMessages = useMemo(
     () => (visibleState ? pickMessages(visibleState, "group") : []),
     [visibleState],
   );
-  const dmMessages = useMemo(
-    () => (visibleState ? pickMessages(visibleState, "dm", dmPeerId) : []),
-    [visibleState, dmPeerId],
-  );
+
+  const activeDmMessages = useMemo(() => {
+    if (!visibleState || !activeChat || activeChat === TEAM_CHAT_ID) return [];
+    return pickMessages(visibleState, "dm", activeChat);
+  }, [visibleState, activeChat]);
+
+  const memberCount = visibleState
+    ? visibleState.employees.filter((e) => !e.isBot).length + 1
+    : 0;
 
   if (!visibleState) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#111] text-white/60">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--surface)] text-[var(--ink-muted)]">
         {error ? <p role="alert">{error}</p> : <p>Loading ShiftFix…</p>}
       </div>
     );
   }
 
-  const isCurrentPersonaDmPeer = currentPersonaId === dmPeerId;
+  const isChats = section === "chats";
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#111]">
-      {/* Top bar */}
-      <div className="relative flex items-center justify-between px-4 py-3 border-b border-white/5">
-        <div>
-          <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-white/30">AI for Business · IBM</p>
-          <h1 className="text-lg font-black tracking-tight text-white">ShiftFix</h1>
+    <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[var(--background)]">
+      {/* E2E compatibility hooks (visually hidden, unique testids) */}
+      <div className="sr-only" aria-hidden>
+        <button type="button" data-testid="tab-group" onClick={() => openChat(TEAM_CHAT_ID)}>
+          Team chat
+        </button>
+        <button type="button" data-testid="tab-dm" onClick={() => openChat(currentPersonaId)}>
+          DM
+        </button>
+        <button
+          type="button"
+          data-testid="tab-schedule"
+          onClick={() => {
+            setSection("schedule");
+            setMobileInConvo(false);
+          }}
+        >
+          Schedule
+        </button>
+        <button
+          type="button"
+          data-testid="tab-audit"
+          onClick={() => {
+            setSection("audit");
+            setMobileInConvo(false);
+          }}
+        >
+          Agent Activity
+        </button>
+        {/* Always mounted so persona can switch from schedule/activity views */}
+        <select
+          data-testid="persona-select"
+          value={currentPersonaId}
+          onChange={(e) => setCurrentPersonaId(e.target.value)}
+          aria-label="Viewing as"
+        >
+          {visibleState.employees
+            .filter((e) => !e.isBot)
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+        </select>
+      </div>
+
+      {error && (
+        <div
+          className="mx-3 mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          role="alert"
+        >
+          {error}
         </div>
-        <div className="flex items-center gap-2">
-          {busy && (
-            <span className="text-[10px] text-[var(--crew-blue)] animate-pulse font-semibold">thinking…</span>
-          )}
+      )}
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <LeftRail
+          section={section}
+          onSelect={(s) => {
+            setSection(s);
+            if (s !== "chats") setMobileInConvo(false);
+          }}
+          adminSlot={<span className="sr-only">Admin lives in header</span>}
+        />
+
+        {/* Single admin control (keeps e2e unique) */}
+        <div className="fixed right-3 top-3 z-50">
           <AdminDrawer
             nowIso={visibleState.nowIso}
             busy={busy}
             onReset={resetDemo}
             onFastForward={fastForward}
+            light
           />
         </div>
-      </div>
 
-      {error && (
-        <div className="mx-4 mt-2 rounded-xl border border-red-900 bg-red-950/60 px-3 py-2 text-sm text-red-300" role="alert">
-          {error}
-        </div>
-      )}
-
-      <PersonaBar
-        employees={visibleState.employees}
-        currentId={currentPersonaId}
-        onSelect={(id) => {
-          setCurrentPersonaId(id);
-        }}
-      />
-
-      <TabBar
-        active={activeTab}
-        onSelect={(t) => {
-          setActiveTab(t);
-          if (t === "group") markGroupRead();
-          if (t === "dm") markDmRead();
-        }}
-        dmLabel={dmPersonaName}
-        unreadGroup={groupUnread}
-        unreadDm={dmUnread}
-      />
-
-      {/* Panel body */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {activeTab === "group" && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-white">
-            <ChatPanel
-              messages={groupMessages}
+        {/* Chat list: mobile when not in convo; always on md+ when chats */}
+        {isChats && (
+          <div
+            className={`${
+              mobileInConvo ? "hidden md:flex" : "flex"
+            } min-h-0 w-full md:w-auto`}
+          >
+            <ChatList
+              rows={chatRows}
+              activeId={activeChat}
+              onSelect={openChat}
               employees={visibleState.employees}
-              currentUserId={currentPersonaId}
-              typing={typingChannel === "group"}
-              disabled={busy}
-              emptyHint="Group chat starts here"
-              onSend={async (text) => {
-                markGroupRead();
-                await sendMessage(text, "group", currentPersonaId);
-              }}
+              currentPersonaId={currentPersonaId}
+              onPersonaChange={setCurrentPersonaId}
             />
           </div>
         )}
 
-        {activeTab === "dm" && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-white">
-            <div className="border-b border-[var(--divider)] bg-[var(--surface)] px-4 py-2">
-              <p className="text-[11px] font-bold text-[var(--ink-muted)]">
-                ShiftFix → {dmPersonaName}
-              </p>
-            </div>
-            <ChatPanel
-              messages={dmMessages}
-              employees={visibleState.employees}
-              currentUserId={isCurrentPersonaDmPeer ? currentPersonaId : dmPeerId}
-              typing={typingChannel === "dm"}
-              disabled={busy}
-              emptyHint="Cover offer lands here"
-              onSend={async (text) => {
-                markDmRead();
-                // Always send DM as the person the offer is addressed to
-                await sendMessage(text, "dm", isCurrentPersonaDmPeer ? currentPersonaId : dmPeerId, dmPeerId);
-              }}
-            />
-            {isCurrentPersonaDmPeer && (
-              <DmQuickReplies
+        {/* Conversation */}
+        {isChats && activeChat && (
+          <div
+            className={`${
+              mobileInConvo ? "flex" : "hidden md:flex"
+            } min-h-0 min-w-0 flex-1 flex-col`}
+          >
+            {activeChat === TEAM_CHAT_ID ? (
+              <Conversation
+                title="Team Chat"
+                subtitle={`${memberCount} members`}
+                isGroup
+                messages={groupMessages}
+                employees={visibleState.employees}
+                currentUserId={currentPersonaId}
+                botId={botId}
+                typing={typingChannel === "group"}
                 disabled={busy}
+                showBack
+                onBack={() => setMobileInConvo(false)}
                 onSend={async (text) => {
-                  markDmRead();
-                  await sendMessage(text, "dm", currentPersonaId, dmPeerId);
+                  markRead(TEAM_CHAT_ID);
+                  await sendMessage(text, "group", currentPersonaId, null);
+                }}
+              />
+            ) : (
+              <Conversation
+                title={
+                  visibleState.employees.find((e) => e.id === activeChat)?.name ??
+                  "DM"
+                }
+                subtitle={
+                  currentPersonaId === activeChat
+                    ? "Direct message with ShiftFix"
+                    : "View only — switch persona to reply"
+                }
+                messages={activeDmMessages}
+                employees={visibleState.employees}
+                currentUserId={activeChat}
+                botId={botId}
+                pendingOffer={
+                  currentPersonaId === activeChat ? pendingOfferForActive : null
+                }
+                offerShiftRole={offerMeta.role}
+                offerWindow={
+                  offerMeta.start
+                    ? { start: offerMeta.start, end: offerMeta.end }
+                    : undefined
+                }
+                dayLabel="Monday"
+                typing={
+                  typingChannel === "dm" &&
+                  (typingPeer === activeChat || typingPeer === null)
+                }
+                disabled={busy || currentPersonaId !== activeChat}
+                showBack
+                onBack={() => setMobileInConvo(false)}
+                onSend={async (text) => {
+                  markRead(activeChat);
+                  await sendMessage(text, "dm", activeChat, activeChat);
+                }}
+                onAcceptOffer={async () => {
+                  markRead(activeChat);
+                  await sendMessage("yes", "dm", activeChat, activeChat);
+                }}
+                onDeclineOffer={async () => {
+                  markRead(activeChat);
+                  await sendMessage("no", "dm", activeChat, activeChat);
                 }}
               />
             )}
           </div>
         )}
 
-        {activeTab === "schedule" && (
-          <div className="flex-1 overflow-y-auto bg-[var(--background)] p-4">
+        {section === "schedule" && (
+          <div className="min-h-0 flex-1 overflow-hidden">
             <ScheduleBoard state={visibleState} />
           </div>
         )}
 
-        {activeTab === "audit" && (
-          <div className="flex-1 overflow-y-auto bg-[var(--background)] p-4">
+        {section === "audit" && (
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--surface)] p-4">
             <AgentActivity state={visibleState} />
           </div>
         )}
+
+        {/* Wide desktop activity side panel (chats only; unique audit-log testid) */}
+        {isChats && (
+          <aside className="hidden w-[320px] shrink-0 overflow-y-auto border-l border-[var(--divider)] bg-white p-4 xl:block">
+            <AgentActivity state={visibleState} panel />
+          </aside>
+        )}
       </div>
+
+      <BottomTabs
+        section={section}
+        hidden={isChats && mobileInConvo}
+        onSelect={(s) => {
+          setSection(s);
+          setMobileInConvo(false);
+        }}
+      />
     </div>
   );
 }

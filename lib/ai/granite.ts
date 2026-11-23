@@ -149,6 +149,14 @@ export function rulesInterpret(message: string): Interpretation {
   if (/\?/.test(text)) {
     return { intent: "question", confidence: 0.75 };
   }
+  // Small talk / acknowledgements — high-confidence "other" so we do not clarify
+  if (
+    /^(thanks|thank you|thank u|thanks guys|thank u guys|thx|ty|ok|okay|k|lol|lmao|haha|cool|great|awesome|np|no problem|anytime|cheers)[!.,]*$/i.test(
+      text,
+    )
+  ) {
+    return { intent: "other", confidence: 0.95 };
+  }
   return { intent: "other", confidence: 0.4 };
 }
 

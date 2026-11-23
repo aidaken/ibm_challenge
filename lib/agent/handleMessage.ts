@@ -951,9 +951,23 @@ export async function handleMessage(
           dmPeerId,
         );
         break;
-      default:
+      default: {
+        // Small talk → brief ack or silence. Clarify only when shift-related but unclear.
+        const raw = input.text.toLowerCase().trim().replace(/[!.,]+$/g, "");
+        const isThanks =
+          /^(thanks|thank you|thank u|thanks guys|thank u guys|thx|ty)$/i.test(raw);
+        const isSmallTalk =
+          isThanks ||
+          /^(ok|okay|k|lol|lmao|haha|cool|great|awesome|np|no problem|anytime|cheers)$/i.test(
+            raw,
+          );
+        if (isSmallTalk) {
+          if (isThanks) postBot("anytime", channel, dmPeerId);
+          break;
+        }
         await postBotAi({ kind: "clarify" }, channel, dmPeerId);
         break;
+      }
     }
 
     return { messages: getState().messages.filter((m) => m.createdAt >= userMsg.createdAt) };

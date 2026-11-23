@@ -1,28 +1,32 @@
 @import "tailwindcss";
 
-/* ShiftFix — written by IBM Bob
-   Crew-chat tokens inspired by common group-messaging chrome (not GroupMe brand). */
+/* ShiftFix — brand tokens (teal accent; light chat canvas) */
 
 :root {
-  --crew-blue: #00aff0;
-  --crew-blue-pressed: #0091c7;
-  --crew-blue-deep: #0077b5;
+  --accent: #0d9488;
+  --accent-pressed: #0f766e;
+  --accent-deep: #115e59;
+  --accent-soft: #ccfbf1;
   --canvas: #ffffff;
-  --surface: #f7f7f8;
-  --inbound: #f0f0f0;
-  --divider: #e4e4e6;
+  --surface: #f4f6f8;
+  --inbound: #eef0f3;
+  --divider: #e5e7eb;
   --ink: #111827;
   --ink-muted: #6b7280;
   --ai: #0d9488;
-  --background: #eef2f6;
+  --background: #eef2f5;
   --foreground: var(--ink);
+  /* legacy aliases used by older class names */
+  --crew-blue: var(--accent);
+  --crew-blue-pressed: var(--accent-pressed);
+  --crew-blue-deep: var(--accent-deep);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-crew: var(--crew-blue);
-  --color-crew-deep: var(--crew-blue-deep);
+  --color-crew: var(--accent);
+  --color-crew-deep: var(--accent-deep);
   --color-surface: var(--surface);
   --color-inbound: var(--inbound);
   --font-sans: var(--font-sans), "DM Sans", ui-sans-serif, system-ui, sans-serif;
@@ -63,7 +67,9 @@ body {
 }
 
 @keyframes typing-bounce {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     transform: translateY(0);
     opacity: 0.4;
   }
@@ -80,4 +86,12 @@ body {
   border-radius: 50%;
   background: #0d9488;
   animation: typing-bounce 1.2s ease-in-out infinite;
+}
+
+/* Safe area helpers for phone */
+.safe-pb {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+.safe-pt {
+  padding-top: max(0px, env(safe-area-inset-top));
 }
