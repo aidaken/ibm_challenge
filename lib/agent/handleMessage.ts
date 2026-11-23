@@ -829,36 +829,53 @@ async function handleDecline(senderId: string) {
 export async function processTimeouts(): Promise<{ timedOut: number }> {
   const now = Date.parse(getNowIso());
   const request = getActiveCoverageRequest();
-  if (!request || request.status !== "offering" || !request.currentOfferId) {
+  if (!request || request.status !== "offering") {
     return { timedOut: 0 };
   }
-  const offer = listOffersForRequest(request.id).find((o) => o.id === request.currentOfferId);
-  if (!offer || offer.status !== "pending") return { timedOut: 0 };
-  if (Date.parse(offer.expiresAt) > now) return { timedOut: 0 };
 
-  upsertOffer({ ...offer, status: "timed_out", answeredAt: getNowIso() });
-  appendAudit({
-    requestId: request.id,
-    actor: "agent",
-    action: "offer_timed_out",
-    reason: `${getEmployee(offer.employeeId)?.name} did not reply in time`,
-  });
-  postBot("timed out — moving on.", "dm", offer.employeeId);
+  // Split-safe: expire every pending offer past expiresAt (not only currentOfferId).
+  const expired = listOffersForRequest(request.id).filter(
+    (o) => o.status === "pending" && Date.parse(o.expiresAt) <= now,
+  );
+  if (expired.length === 0) return { timedOut: 0 };
 
-  if (offer.partId) {
-    // Timeout on a split part — replace just that part
-    const part = listCoveragePartsForRequest(request.id).find((p) => p.id === offer.partId);
-    if (part) {
-      await replacePartOffer(request, offer, part);
-    }
-  } else {
-    const tried = listOffersForRequest(request.id).map((o) => o.employeeId);
-    await sendNextOffer(
-      { ...getActiveCoverageRequest()!, status: "offering" },
-      tried,
+  let timedOut = 0;
+  for (const offer of expired) {
+    // Re-read request — replacePartOffer / sendNextOffer may escalate or cover.
+    const active = getActiveCoverageRequest();
+    if (!active || active.id !== request.id || active.status !== "offering") break;
+
+    const stillPending = listOffersForRequest(request.id).find(
+      (o) => o.id === offer.id && o.status === "pending",
     );
+    if (!stillPending) continue;
+
+    upsertOffer({ ...stillPending, status: "timed_out", answeredAt: getNowIso() });
+    appendAudit({
+      requestId: request.id,
+      actor: "agent",
+      action: "offer_timed_out",
+      reason: `${getEmployee(stillPending.employeeId)?.name} did not reply in time`,
+    });
+    postBot("timed out — moving on.", "dm", stillPending.employeeId);
+    timedOut += 1;
+
+    if (stillPending.partId) {
+      const part = listCoveragePartsForRequest(request.id).find(
+        (p) => p.id === stillPending.partId,
+      );
+      if (part) {
+        await replacePartOffer(active, stillPending, part);
+      }
+    } else {
+      const tried = listOffersForRequest(request.id).map((o) => o.employeeId);
+      await sendNextOffer(
+        { ...getActiveCoverageRequest()!, status: "offering" },
+        tried,
+      );
+    }
   }
-  return { timedOut: 1 };
+  return { timedOut };
 }
 
 // ── Main message handler ─────────────────────────────────────────────────────

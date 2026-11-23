@@ -6,6 +6,7 @@ import { type ChatRowData } from "@/components/chat/ChatRow";
 import { ChatList } from "@/components/chat/ChatList";
 import { Conversation, pickMessages } from "@/components/chat/Conversation";
 import { ScheduleBoard } from "@/components/schedule/ScheduleBoard";
+import { DemoCoach } from "@/components/demo/DemoCoach";
 import { AdminDrawer } from "@/components/shell/AdminDrawer";
 import { BottomTabs } from "@/components/shell/BottomTabs";
 import { LeftRail, type ShellSection } from "@/components/shell/LeftRail";
@@ -577,6 +578,18 @@ export function DemoApp() {
           </aside>
         )}
       </div>
+
+      <DemoCoach
+        actions={{
+          busy,
+          resetDemo,
+          fastForward,
+          setSection,
+          setPersonaId: setCurrentPersonaId,
+          openChat,
+          sendMessage,
+        }}
+      />
 
       <BottomTabs
         section={section}

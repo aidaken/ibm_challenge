@@ -115,10 +115,20 @@ npm run build
 
 ## Demo script (UI)
 
+Use the floating **Demo Coach** (bottom-left) — three paths map to the differentiators. Prefer **Run this path** in order 1 → 2 → 3, or tap **Do** on each step.
+
+| Path | Differentiator | What to show |
+| --- | --- | --- |
+| **1 · Split** | AI shift splitting | Reset → schedule → Amanda call-out → Agent Activity (split + skips) → Maya’s offer DM |
+| **2 · Self-heal** | Declines / timeouts | Maya accepts → Arlo declines (or optional **Fast-forward timeout**) → David’s offer |
+| **3 · Explained** | Zero manager work | David accepts → Schedule covered → **Sam** manager DM → full Agent Activity |
+
+### Manual fallback (same story)
+
 1. Admin ⚙ → **Reset demo**
 2. Posting as **Amanda** → Team chat:  
    `hey I'm not available for my Monday shift, can someone cover me?`
 3. Open DMs → **Maya** → Accept (or `yes`)
-4. **Arlo** → Decline (or `no`)
+4. **Arlo** → Decline (or `no`) — or ⚙ **Fast forward** to expire a pending part
 5. **David** → Accept
-6. Check **Schedule** and **Agent Activity**
+6. Check **Schedule**, persona **Sam** DM, and **Agent Activity**

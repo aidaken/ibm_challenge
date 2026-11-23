@@ -156,3 +156,40 @@ test("smoke: Arlo covers a 2pm-6pm shift and schedule updates", async ({ page })
   const resetRes = await fetch(`${page.url()}api/demo/reset`, { method: "POST" });
   expect(resetRes.ok).toBe(true);
 });
+
+test("Demo Coach runs split → self-heal → explained", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.addInitScript(() => localStorage.clear());
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  const coach = page.getByTestId("demo-coach");
+  await expect(coach).toBeVisible();
+
+  // Path 1 · Split (ends on Maya’s offer DM)
+  await page.getByTestId("demo-path-split").click();
+  await page.getByTestId("demo-run-path").click();
+  await expect(page.getByTestId("chat-messages")).toContainText(/hey Maya/i, {
+    timeout: 60_000,
+  });
+
+  // Path 2 · Self-heal (Maya yes → Arlo no → David offer)
+  await page.getByTestId("demo-path-self-heal").click();
+  await page.getByTestId("demo-run-path").click();
+  await expect(page.getByTestId("chat-messages")).toContainText(/hey David|can (u|you) cover/i, {
+    timeout: 60_000,
+  });
+
+  // Path 3 · Explained (David yes → schedule → Sam → activity)
+  await page.getByTestId("demo-path-explained").click();
+  await page.getByTestId("demo-run-path").click();
+  await expect(page.getByTestId("audit-log")).toContainText(/auto assigned|part accepted|covered/i, {
+    timeout: 90_000,
+  });
+  await openTab(page, "tab-schedule");
+  await expect(page.getByTestId("shift-shift_amanda_mon")).toHaveAttribute(
+    "data-status",
+    "covered",
+    { timeout: 10_000 },
+  );
+});
