@@ -1,14 +1,14 @@
-// ShiftFix — written by IBM Bob
-// Shared domain types for the cafe coverage demo.
-
 export type EmployeeRole = "barista" | "cashier" | "manager";
 
 export type CoverageStatus =
   | "open"
+  | "planning"
   | "offering"
-  | "pending_approval"
-  | "filled"
+  | "covered"
+  | "filled"      // alias for covered (kept for backward compat)
   | "escalated";
+
+export type CoveragePartStatus = "open" | "offering" | "accepted" | "covered";
 
 export type OfferStatus = "pending" | "accepted" | "declined" | "timed_out" | "skipped";
 
@@ -20,9 +20,9 @@ export type Intent =
   | "call_out"
   | "accept"
   | "decline"
+  | "partial_availability"
   | "question"
-  | "other"
-  | "confirm";
+  | "other";
 
 export interface Employee {
   id: string;
@@ -55,6 +55,7 @@ export interface Shift {
 export interface CoverageRequest {
   id: string;
   shiftId: string;
+  calledOutBy?: string;
   reason: string;
   status: CoverageStatus;
   currentOfferId: string | null;
@@ -62,9 +63,20 @@ export interface CoverageRequest {
   updatedAt: string;
 }
 
+/** One piece of a potentially split shift. */
+export interface CoveragePart {
+  id: string;
+  requestId: string;
+  startsAt: string;
+  endsAt: string;
+  status: CoveragePartStatus;
+  assignedEmployeeId: string | null;
+}
+
 export interface Offer {
   id: string;
   requestId: string;
+  partId?: string;      // set when covering a split part
   employeeId: string;
   rank: number;
   status: OfferStatus;
@@ -83,6 +95,12 @@ export interface Message {
   text: string;
   graniteIntent: Intent | null;
   confidence: number | null;
+  /** Which AI provider interpreted this message (undefined for bot messages). */
+  aiProvider?: string;
+  /** Model id when a remote provider was used. */
+  aiModelId?: string;
+  /** Latency of the AI call that produced the interpretation, in ms. */
+  aiLatencyMs?: number;
   createdAt: string;
 }
 
@@ -92,6 +110,12 @@ export interface AuditEvent {
   actor: Actor;
   action: string;
   reason: string;
+  /** Which AI provider generated this reason string, if any. */
+  aiProvider?: string;
+  /** Model id when a remote provider was used. */
+  aiModelId?: string;
+  /** Latency of the AI call that produced the reason, in ms. */
+  aiLatencyMs?: number;
   timestamp: string;
 }
 
@@ -117,6 +141,7 @@ export interface DemoState {
   availability: AvailabilityWindow[];
   shifts: Shift[];
   coverageRequests: CoverageRequest[];
+  coverageParts: CoveragePart[];
   offers: Offer[];
   messages: Message[];
   auditEvents: AuditEvent[];

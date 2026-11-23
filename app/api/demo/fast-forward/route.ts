@@ -1,15 +1,42 @@
-// ShiftFix — written by IBM Bob
-
 import { NextResponse } from "next/server";
 import { processTimeouts } from "@/lib/agent/handleMessage";
 import { bumpNow } from "@/lib/db/queries";
-import { getState } from "@/lib/db/store";
+import {
+  ensureHydrated,
+  getState,
+  getStoreBackend,
+  setStateAsync,
+} from "@/lib/db/store";
+import type { DemoState } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-/** Jump the demo clock ahead 11 minutes to expire pending offers. */
-export async function POST() {
+export async function POST(request: Request) {
+  await ensureHydrated();
+
+  try {
+    const body = (await request.json().catch(() => ({}))) as {
+      clientState?: DemoState;
+    };
+    if (
+      getStoreBackend() === "memory" &&
+      body.clientState &&
+      Array.isArray(body.clientState.employees)
+    ) {
+      const { replaceState } = await import("@/lib/db/store");
+      replaceState(body.clientState);
+    }
+  } catch {
+    // no body is fine
+  }
+
   bumpNow(11 * 60 * 1000);
-  const result = processTimeouts();
-  return NextResponse.json({ ok: true, ...result, state: getState() });
+  const result = await processTimeouts();
+  await setStateAsync(getState());
+  return NextResponse.json({
+    ok: true,
+    ...result,
+    state: getState(),
+    backend: getStoreBackend(),
+  });
 }

@@ -1,8 +1,8 @@
-// ShiftFix — written by IBM Bob
 // Query helpers over the demo store (swap to Supabase later via same shapes).
 
 import type {
   AuditEvent,
+  CoveragePart,
   CoverageRequest,
   Employee,
   Message,
@@ -52,8 +52,20 @@ export function listAuditEvents(): AuditEvent[] {
 
 export function getActiveCoverageRequest(): CoverageRequest | undefined {
   return getState().coverageRequests.find((r) =>
-    ["open", "offering", "pending_approval"].includes(r.status),
+    ["open", "planning", "offering"].includes(r.status),
   );
+}
+
+export function listCoveragePartsForRequest(requestId: string): CoveragePart[] {
+  return getState().coverageParts.filter((p) => p.requestId === requestId);
+}
+
+export function upsertCoveragePart(part: CoveragePart): void {
+  updateState((s) => {
+    const idx = s.coverageParts.findIndex((p) => p.id === part.id);
+    if (idx >= 0) s.coverageParts[idx] = part;
+    else s.coverageParts.push(part);
+  });
 }
 
 export function getCoverageRequest(id: string): CoverageRequest | undefined {

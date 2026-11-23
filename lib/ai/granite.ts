@@ -1,52 +1,149 @@
-// ShiftFix — written by IBM Bob
-// Granite language client. watsonx | ollama | mock behind one interface.
-// Granite handles LANGUAGE only — never eligibility or state changes.
+/**
+ * Language client: bob | watsonx | rules (AI_PROVIDER).
+ * Granite/Bob handle LANGUAGE only — never eligibility or state changes.
+ */
 
 import {
   CONFIDENCE_THRESHOLD,
-  InterpreterResultSchema,
-  type InterpreterResult,
+  InterpretationSchema,
+  type Interpretation,
 } from "@/lib/ai/schemas";
-import { buildInterpreterPrompt } from "@/lib/ai/prompts";
+import {
+  buildInterpretPrompt,
+  buildWriteMessagePrompt,
+  buildExplainDecisionPrompt,
+  templateOfferDm,
+  templateLookingReply,
+  templateConfirmDm,
+  templateGroupAnnouncement,
+  templateSplitAnnouncement,
+  templateManagerDm,
+  templateClarifyReply,
+  templateEscalate,
+  templateDeclineNext,
+  templateOverlapTaken,
+  type InterpretContext,
+  type MessageFacts,
+  type MessageKind,
+  type DecisionFacts,
+} from "@/lib/ai/prompts";
+import { bobConfigStatus, callBobChat } from "@/lib/ai/providers/bob";
+import { callWatsonxChat, watsonxModelId } from "@/lib/ai/providers/watsonx";
+import { tryReserveAiCall } from "@/lib/ai/sessionCap";
 
-export type AiProvider = "watsonx" | "ollama" | "mock";
+export type AiProvider = "bob" | "watsonx" | "rules";
 
-function resolveProvider(): AiProvider {
-  const raw = (process.env.AI_PROVIDER ?? "mock").toLowerCase();
-  if (raw === "watsonx" || raw === "ollama" || raw === "mock") {
-    return raw;
-  }
-  return "mock";
+export interface GraniteResult {
+  text: string;
+  provider: AiProvider;
+  modelId?: string;
+  latencyMs: number;
 }
 
-/**
- * Deterministic local interpreter so the hackathon demo stays green without
- * watsonx/Ollama. Same Zod contract as the live Granite path.
- */
-export function mockInterpret(message: string): InterpreterResult {
+export interface InterpretResult extends Interpretation {
+  provider: AiProvider;
+  modelId?: string;
+  latencyMs: number;
+}
+
+interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+let warnedBobMissing = false;
+let warnedCap = false;
+
+function resolveProvider(): AiProvider {
+  const raw = (process.env.AI_PROVIDER ?? "rules").toLowerCase().trim();
+  if (raw === "bob" || raw === "watsonx" || raw === "rules") return raw;
+  if (raw === "mock" || raw === "ollama") return "rules";
+  return "rules";
+}
+
+/** Effective provider after env readiness checks. */
+export function effectiveProvider(
+  override?: AiProvider,
+): AiProvider {
+  const provider = override ?? resolveProvider();
+  if (provider === "bob") {
+    const cfg = bobConfigStatus();
+    if (!cfg.ready) {
+      if (!warnedBobMissing) {
+        warnedBobMissing = true;
+        console.warn(
+          `[ai] AI_PROVIDER=bob but missing ${cfg.missing.join(", ")} — using rules`,
+        );
+      }
+      return "rules";
+    }
+  }
+  if (provider === "watsonx") {
+    if (!process.env.WATSONX_API_KEY || !process.env.WATSONX_PROJECT_ID) {
+      console.warn(
+        "[ai] AI_PROVIDER=watsonx but WATSONX_API_KEY/PROJECT_ID missing — using rules",
+      );
+      return "rules";
+    }
+  }
+  return provider;
+}
+
+export function activeModelId(provider: AiProvider): string | undefined {
+  if (provider === "bob") return bobConfigStatus().modelId;
+  if (provider === "watsonx") return watsonxModelId();
+  return undefined;
+}
+
+async function callModel(
+  provider: AiProvider,
+  messages: ChatMessage[],
+): Promise<{ text: string; modelId: string }> {
+  if (provider === "rules") {
+    throw new Error("callModel: cannot call rules provider");
+  }
+  if (!tryReserveAiCall()) {
+    if (!warnedCap) {
+      warnedCap = true;
+      console.warn("[ai] session model call cap reached — using rules");
+    }
+    throw new Error("AI_MAX_CALLS_PER_SESSION exceeded");
+  }
+  if (provider === "bob") {
+    const r = await callBobChat(messages, { timeoutMs: 8_000 });
+    return { text: r.text, modelId: r.modelId };
+  }
+  return callWatsonxChat(messages);
+}
+
+export function rulesInterpret(message: string): Interpretation {
   const text = message.toLowerCase().trim();
 
   if (
-    /\b(confirm|approved|approve|yes,? confirm)\b/.test(text) ||
-    text === "confirm"
-  ) {
-    return { intent: "confirm", confidence: 0.95 };
-  }
-  if (
-    /\b(can't|cannot|cant|not available|call.?out|sick|cover me|someone cover)\b/.test(
+    /\b(can't|cannot|cant|not available|call.?out|sick|cover me|someone cover|won't make|can't make|wont make)\b/.test(
       text,
     )
   ) {
-    return {
-      intent: "call_out",
-      shift_ref: "monday morning",
-      confidence: 0.92,
-    };
+    return { intent: "call_out", shift_ref: "monday", confidence: 0.92 };
   }
-  if (/^(yes|yep|yeah|i can|i'll take it|ill take it|sure)\b/.test(text)) {
+  if (
+    /\bi can only (do|work|cover|be there)/.test(text) ||
+    /available (from|until|till|to)/.test(text)
+  ) {
+    return { intent: "partial_availability", confidence: 0.85 };
+  }
+  if (
+    /^(yes|yep|yeah|i can|i'll take it|ill take it|sure|absolutely|of course|sounds good)\b/.test(
+      text,
+    )
+  ) {
     return { intent: "accept", confidence: 0.93 };
   }
-  if (/^(no|nope|can't|cannot|pass|decline)\b/.test(text)) {
+  if (
+    /^(no|nope|can't|cannot|pass|decline|sorry|nah|not today|i can't)\b/.test(
+      text,
+    )
+  ) {
     return { intent: "decline", confidence: 0.9 };
   }
   if (/\?/.test(text)) {
@@ -55,120 +152,269 @@ export function mockInterpret(message: string): InterpreterResult {
   return { intent: "other", confidence: 0.4 };
 }
 
-async function callOllama(prompt: string): Promise<string> {
-  const base = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
-  const model = process.env.OLLAMA_MODEL ?? "granite3.3:8b";
-  const res = await fetch(`${base}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, prompt, stream: false, format: "json" }),
-  });
-  if (!res.ok) {
-    throw new Error(`Ollama error ${res.status}: ${await res.text()}`);
-  }
-  const data = (await res.json()) as { response?: string };
-  return data.response ?? "";
-}
+/** @deprecated use rulesInterpret */
+export const mockInterpret = rulesInterpret;
 
-async function callWatsonx(prompt: string): Promise<string> {
-  const apiKey = process.env.WATSONX_API_KEY;
-  const projectId = process.env.WATSONX_PROJECT_ID;
-  const url =
-    process.env.WATSONX_URL ??
-    "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation?version=2024-05-29";
-  const modelId = process.env.WATSONX_MODEL_ID ?? "ibm/granite-3-8b-instruct";
-
-  if (!apiKey || !projectId) {
-    throw new Error("WATSONX_API_KEY and WATSONX_PROJECT_ID are required");
-  }
-
-  const tokenRes = await fetch("https://iam.cloud.ibm.com/identity/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${encodeURIComponent(apiKey)}`,
-  });
-  if (!tokenRes.ok) {
-    throw new Error(`watsonx IAM error ${tokenRes.status}`);
-  }
-  const tokenJson = (await tokenRes.json()) as { access_token: string };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${tokenJson.access_token}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      model_id: modelId,
-      project_id: projectId,
-      input: prompt,
-      parameters: {
-        decoding_method: "greedy",
-        max_new_tokens: 200,
-        temperature: 0,
-      },
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`watsonx error ${res.status}: ${await res.text()}`);
-  }
-  const data = (await res.json()) as {
-    results?: Array<{ generated_text?: string }>;
-  };
-  return data.results?.[0]?.generated_text ?? "";
-}
-
-function parseInterpreterJson(raw: string): InterpreterResult {
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) {
-    return { intent: "other", confidence: 0 };
-  }
+function parseInterpretation(raw: string): Interpretation | null {
+  const stripped = raw
+    .replace(/```(?:json)?\s*/gi, "")
+    .replace(/```/g, "")
+    .trim();
+  const match = stripped.match(/\{[\s\S]*\}/);
+  if (!match) return null;
   try {
     const parsed: unknown = JSON.parse(match[0]);
-    const result = InterpreterResultSchema.safeParse(parsed);
-    if (!result.success) {
-      return { intent: "other", confidence: 0 };
-    }
-    return result.data;
+    const result = InterpretationSchema.safeParse(parsed);
+    return result.success ? result.data : null;
   } catch {
-    return { intent: "other", confidence: 0 };
+    return null;
   }
 }
 
 export interface InterpretOptions {
   message: string;
-  context?: string;
-  /** Force a provider (tests). */
+  context: InterpretContext;
   provider?: AiProvider;
 }
 
 export async function interpretMessage(
   options: InterpretOptions,
-): Promise<InterpreterResult> {
-  const provider = options.provider ?? resolveProvider();
-  const context = options.context ?? "Cafe team chat / DM.";
+): Promise<InterpretResult> {
+  const provider = effectiveProvider(options.provider);
 
-  if (provider === "mock") {
-    return mockInterpret(options.message);
+  if (provider === "rules") {
+    return { ...rulesInterpret(options.message), provider: "rules", latencyMs: 0 };
   }
 
-  const prompt = buildInterpreterPrompt(options.message, context);
+  const prompt = buildInterpretPrompt(options.message, options.context);
+  const messages: ChatMessage[] = [
+    { role: "system", content: "You are ShiftFix. Return only valid JSON." },
+    { role: "user", content: prompt },
+  ];
+
+  const t0 = Date.now();
+  let raw: string | null = null;
+  let modelId: string | undefined;
+
   try {
-    const raw =
-      provider === "watsonx"
-        ? await callWatsonx(prompt)
-        : await callOllama(prompt);
-    return parseInterpreterJson(raw);
+    const r = await callModel(provider, messages);
+    raw = r.text;
+    modelId = r.modelId;
   } catch (err) {
-    // Keep the demo alive if remote Granite is down — fall back to mock.
-    console.error("[granite] provider failed, using mock:", err);
-    return mockInterpret(options.message);
+    console.error("[ai] interpretMessage attempt 1 failed:", err);
+  }
+
+  let parsed = raw !== null ? parseInterpretation(raw) : null;
+
+  if (parsed === null) {
+    try {
+      const r = await callModel(provider, messages);
+      raw = r.text;
+      modelId = r.modelId;
+      parsed = raw !== null ? parseInterpretation(raw) : null;
+    } catch (err) {
+      console.error("[ai] interpretMessage attempt 2 failed:", err);
+    }
+  }
+
+  const latencyMs = Date.now() - t0;
+
+  if (parsed !== null) {
+    return { ...parsed, provider, modelId, latencyMs };
+  }
+
+  console.warn(`[ai] falling back to rules after ${provider} failed`);
+  return { ...rulesInterpret(options.message), provider: "rules", latencyMs };
+}
+
+function verifyFacts(text: string, facts: MessageFacts): boolean {
+  if (!facts.dayLabel || !facts.windowLabel) return true;
+  const startTime = facts.windowLabel.split(" to ")[0];
+  return text.includes(facts.dayLabel) && text.includes(startTime);
+}
+
+function getFallback(facts: MessageFacts): string {
+  switch (facts.kind) {
+    case "offer_dm":
+      return templateOfferDm({
+        candidateName: facts.candidateName ?? "there",
+        callOutName: facts.callOutName ?? "someone",
+        dayLabel: facts.dayLabel ?? "",
+        windowLabel: facts.windowLabel ?? "",
+      });
+    case "looking_reply":
+      return templateLookingReply();
+    case "confirm_dm":
+    case "part_confirm_dm":
+      return templateConfirmDm({
+        dayLabel: facts.dayLabel ?? "",
+        windowLabel: facts.windowLabel ?? "",
+      });
+    case "group_announcement":
+      return templateGroupAnnouncement({
+        dayLabel: facts.dayLabel ?? "",
+        windowLabel: facts.windowLabel ?? "",
+        name: facts.candidateName ?? "someone",
+      });
+    case "split_announcement":
+      return templateSplitAnnouncement({
+        dayLabel: facts.dayLabel ?? "",
+        windowLabel: facts.windowLabel ?? "",
+        coverageDesc: facts.coverageDesc ?? "",
+      });
+    case "manager_dm":
+      return templateManagerDm({
+        dayLabel: facts.dayLabel ?? "",
+        windowLabel: facts.windowLabel ?? "",
+        coverageDesc: facts.coverageDesc ?? facts.candidateName ?? "someone",
+      });
+    case "clarify":
+      return templateClarifyReply();
+    case "escalate":
+      return templateEscalate(facts.skipReasons ?? []);
+    case "decline_next":
+      return templateDeclineNext();
+    case "overlap_taken":
+      return templateOverlapTaken();
   }
 }
 
-export function needsClarification(result: InterpreterResult): boolean {
+export async function writeMessage(
+  facts: MessageFacts,
+  providerOverride?: AiProvider,
+): Promise<GraniteResult> {
+  const provider = effectiveProvider(providerOverride);
+  const fallback = getFallback(facts);
+
+  if (provider === "rules") {
+    return { text: fallback, provider: "rules", latencyMs: 0 };
+  }
+
+  const prompt = buildWriteMessagePrompt(facts);
+  const messages: ChatMessage[] = [
+    { role: "system", content: "You are ShiftFix. Write one short message." },
+    { role: "user", content: prompt },
+  ];
+
+  const t0 = Date.now();
+  let generated: string | null = null;
+  let modelId: string | undefined;
+
+  try {
+    const r = await callModel(provider, messages);
+    modelId = r.modelId;
+    generated = r.text
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/^["']|["']$/g, "")
+      .trim();
+  } catch (err) {
+    console.error("[ai] writeMessage failed:", err);
+  }
+
+  const latencyMs = Date.now() - t0;
+
+  if (generated && generated.length > 2 && verifyFacts(generated, facts)) {
+    return { text: generated, provider, modelId, latencyMs };
+  }
+
+  if (generated && generated.length > 2) {
+    try {
+      const r2 = await callModel(provider, messages);
+      modelId = r2.modelId;
+      const generated2 = r2.text
+        .replace(/```[\s\S]*?```/g, "")
+        .replace(/^["']|["']$/g, "")
+        .trim();
+      if (generated2.length > 2 && verifyFacts(generated2, facts)) {
+        return {
+          text: generated2,
+          provider,
+          modelId,
+          latencyMs: Date.now() - t0,
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return { text: fallback, provider: "rules", latencyMs };
+}
+
+function buildDefaultExplanation(facts: DecisionFacts): string {
+  switch (facts.action) {
+    case "skip_candidate":
+      return (
+        facts.skipReason ??
+        `${facts.candidateName ?? "Candidate"} is not eligible for this shift.`
+      );
+    case "offer_sent":
+      return `${facts.candidateName ?? "Candidate"} is the best available match (rank ${facts.rank ?? "?"}).`;
+    case "split_plan_chosen":
+      return `No single person can cover the full shift. Split plan: ${facts.splitParts ?? "2 parts"}.`;
+    case "offer_accepted":
+    case "part_accepted":
+      return `${facts.candidateName ?? "Employee"} accepted the cover for ${facts.windowLabel ?? "the shift"}.`;
+    case "offer_declined":
+    case "part_declined":
+      return `${facts.candidateName ?? "Employee"} declined. Moving to next candidate.`;
+    case "auto_assigned":
+      return `Shift covered automatically. ${facts.splitParts ?? ""}`;
+    case "escalated":
+      return "No feasible coverage plan found. Manager intervention required.";
+    case "interpreted_call_out":
+      return `Call-out detected (${facts.intent ?? "call_out"}, confidence ${((facts.confidence ?? 0) * 100).toFixed(0)}%).`;
+    default:
+      return `Agent action: ${facts.action}.`;
+  }
+}
+
+export async function explainDecision(
+  facts: DecisionFacts,
+  providerOverride?: AiProvider,
+): Promise<GraniteResult> {
+  const provider = effectiveProvider(providerOverride);
+  const defaultExplanation = buildDefaultExplanation(facts);
+
+  if (provider === "rules") {
+    return { text: defaultExplanation, provider: "rules", latencyMs: 0 };
+  }
+
+  const prompt = buildExplainDecisionPrompt(facts);
+  const messages: ChatMessage[] = [
+    { role: "system", content: "You are ShiftFix. Write one short sentence." },
+    { role: "user", content: prompt },
+  ];
+
+  const t0 = Date.now();
+  let generated: string | null = null;
+  let modelId: string | undefined;
+
+  try {
+    const r = await callModel(provider, messages);
+    modelId = r.modelId;
+    generated = r.text
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/^["']|["']$/g, "")
+      .trim();
+    if (!generated || generated.length > 120) generated = null;
+  } catch (err) {
+    console.error("[ai] explainDecision failed:", err);
+  }
+
+  const latencyMs = Date.now() - t0;
+
+  return {
+    text: generated ?? defaultExplanation,
+    provider: generated ? provider : "rules",
+    modelId: generated ? modelId : undefined,
+    latencyMs,
+  };
+}
+
+export function needsClarification(result: InterpretResult): boolean {
   return result.confidence < CONFIDENCE_THRESHOLD;
 }
 
 export { CONFIDENCE_THRESHOLD };
+export type { InterpretContext, MessageFacts, MessageKind, DecisionFacts };

@@ -1,33 +1,36 @@
-// ShiftFix — written by IBM Bob
 // Coverage request transitions — the only place status may change.
 
 import type { CoverageStatus } from "@/lib/types";
 
 export type TransitionAction =
+  | "start_planning"
   | "start_offering"
   | "next_candidate"
   | "worker_accepts"
-  | "manager_approves"
-  | "manager_rejects"
+  | "split_needed"
+  | "all_parts_covered"
   | "no_candidates"
   | "exhausted";
 
 const ALLOWED: Record<CoverageStatus, Partial<Record<TransitionAction, CoverageStatus>>> = {
   open: {
+    start_planning: "planning",
+    start_offering: "offering",
+    no_candidates: "escalated",
+  },
+  planning: {
     start_offering: "offering",
     no_candidates: "escalated",
   },
   offering: {
     next_candidate: "offering",
-    worker_accepts: "pending_approval",
+    worker_accepts: "covered",
+    split_needed: "planning",
+    all_parts_covered: "covered",
     exhausted: "escalated",
   },
-  pending_approval: {
-    manager_approves: "filled",
-    manager_rejects: "offering",
-    exhausted: "escalated",
-  },
-  filled: {},
+  covered: {},
+  filled: {},    // treated the same as covered
   escalated: {},
 };
 
@@ -46,7 +49,7 @@ export function transition(
   current: CoverageStatus,
   action: TransitionAction,
 ): CoverageStatus {
-  const next = ALLOWED[current][action];
+  const next = ALLOWED[current]?.[action];
   if (!next) {
     throw new InvalidTransitionError(current, action);
   }
@@ -57,5 +60,5 @@ export function canTransition(
   current: CoverageStatus,
   action: TransitionAction,
 ): boolean {
-  return Boolean(ALLOWED[current][action]);
+  return Boolean(ALLOWED[current]?.[action]);
 }

@@ -1,49 +1,60 @@
 # ShiftFix
 
-AI agent that gets a call-out shift covered without the manager texting anyone.
+When an employee can't make a shift, ShiftFix understands their message, finds the best replacement (or splits the shift between people), messages them, handles replies, and assigns the shift automatically. The manager only steps in when the agent truly can't solve it.
 
-Hackathon prototype for the **AI Builders Challenge** — **AI for Business** track.  
-Deadline target: Dec 2, 5pm ET. Built primarily with **IBM Bob**.
+Built for the **IBM AI Builders Challenge — AI for Business** track.
 
-## Problem
+---
 
-Someone calls out at 6am. The manager spends the morning texting people one by one, waiting on replies, and fixing the schedule by hand. Small cafes still run this on group chats and spreadsheets.
+## Three differentiators
 
-## Solution
+1. **AI shift splitting.** If nobody can cover the whole shift, TypeScript computes a 2- or 3-person split, DMs each person, and only marks covered when every part is confirmed. A decline replaces just that part.
+2. **Handles declines and timeouts on its own.** Fast-forward expires offers; the agent moves to the next candidate or part without the manager.
+3. **Zero manager work, fully explained.** Acceptance auto-assigns. The manager gets a short "covered" DM. **Agent Activity** shows every decision and why.
 
-1. Worker posts a call-out in the team chat.
-2. ShiftFix (Granite) reads the message as language only.
-3. TypeScript picks who is eligible and ranks them.
-4. The agent DMs candidates until someone says yes.
-5. Manager confirms once → schedule updates → every step hits the audit log.
+---
 
-## Demo flow (always keep this green)
+## AI approach and architecture
 
-1. Schedule shows **Amanda** on Monday 11am–5pm (barista).
-2. Amanda: `hey I'm not available for my Monday morning shift, can someone cover me?`
-3. ShiftFix: `okay, looking`
-4. Engine skips **Jordan** (already working + not barista), picks **Arlo**.
-5. DM Arlo → Arlo: `yes` → ShiftFix checks with the manager.
-6. Manager: `confirm` → schedule flips to Arlo, audit log shows every step.
+```
+Worker message
+      │
+      ▼
+  Language model (IBM Bob or watsonx Granite)  OR  rules fallback
+      │     LANGUAGE ONLY → intent JSON (Zod) + friendly copy
+      ▼
+  TypeScript ── ALL DECISIONS ──► eligibility, ranking, splitting, assignment
+      │
+      ▼
+  State machine (lib/coverage/stateMachine.ts)
+      │
+  open → planning → offering → covered | escalated
+      ▼
+  Store: Supabase snapshot (preferred) | memory + browser localStorage
+```
+
+`AI_PROVIDER` options: `bob` | `watsonx` | `rules`.
+
+- Missing Bob/watsonx credentials → one-line warning → **rules** (demo still works).
+- Max 1 retry, 8s timeout, `AI_MAX_CALLS_PER_SESSION` (default 60).
+- Keys are server-side only (`BOB_*`, `WATSONX_*`). Never `NEXT_PUBLIC_` for secrets.
+
+Bob request shape lives in `lib/ai/providers/bob.ts` (search for `CONFIRM:`).
+
+---
 
 ## Stack
 
-| Layer | Pick |
+| Layer | Choice |
 | --- | --- |
-| App | Next.js App Router + TypeScript (strict) |
-| Data | File/tmp demo store + Supabase SQL migrations for later |
-| AI | IBM Granite on watsonx.ai, Ollama fallback, or `AI_PROVIDER=mock` |
-| UI | Tailwind, GroupMe-inspired chat (no GroupMe branding) |
+| App | Next.js 15 App Router + TypeScript strict |
+| Data | Supabase (`demo_snapshots` + SQL migrations) or memory + localStorage |
+| AI | IBM Bob inference, watsonx.ai, or `rules` |
+| UI | Tailwind CSS |
 | Host | Vercel |
-| Tests | Vitest (logic) + Playwright (demo flow) |
+| Tests | Vitest + Playwright |
 
-## Architecture
-
-- **Granite** (`lib/ai/`): language only — intent JSON + friendly copy.
-- **TypeScript** (`lib/coverage/`): eligibility, ranking, state machine.
-- Interpreter returns Zod-validated JSON. Confidence &lt; 0.7 → clarifying question.
-- Coverage states: `open → offering → pending_approval → filled` (or `escalated`).
-- Transitions only through `lib/coverage/stateMachine.ts`, each with an audit row.
+---
 
 ## Setup
 
@@ -55,31 +66,59 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### Env
-
-See `.env.example`. For local/demo without watsonx:
+Default `.env.local`:
 
 ```
-AI_PROVIDER=mock
+AI_PROVIDER=rules
 ```
+
+### Environment variables
+
+See `.env.example`. Summary:
+
+| Variable | Where |
+| --- | --- |
+| `AI_PROVIDER` | `bob` \| `watsonx` \| `rules` |
+| `AI_MAX_CALLS_PER_SESSION` | optional, default 60 |
+| `BOB_API_KEY` | bob.ibm.com key (required for `bob`) |
+| `BOB_TEAM_ID` | optional — General keys only |
+| `BOB_INFERENCE_URL` | optional — defaults to Bob us-east chat completions |
+| `BOB_MODEL_ID` | optional — default `premium` |
+| `WATSONX_API_KEY` / `WATSONX_PROJECT_ID` / `WATSONX_URL` / `GRANITE_MODEL_ID` | watsonx alternative |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | durable demo on Vercel |
+
+### Vercel
+
+Set the same vars in the Vercel project (Production + Preview). Recommended for the public demo:
+
+- `AI_PROVIDER=bob` with `BOB_API_KEY` (+ optional `BOB_MODEL_ID=premium`)
+- Or `AI_PROVIDER=rules` for offline / CI demos
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (and run migrations `001` + `002`)
+
+No `vercel.json` is required for this Next.js app.
+
+Without Supabase, the demo still runs using server memory plus **browser localStorage** (survives refresh on the same browser; admin **Reset demo** clears it).
+
+---
 
 ## Tests
 
 ```bash
-npm test          # unit: eligibility, ranking, state machine, interpreter, agent flow
-npm run test:e2e  # Playwright: exact Amanda → Arlo → manager demo
+npm test                 # unit
+npm run test:e2e         # Playwright (AI_PROVIDER=rules, no keys)
+npm run granite:check    # interpreter smoke (prints provider + model)
+npx tsc --noEmit
+npm run build
 ```
 
-## How we used IBM Bob
+---
 
-IBM Bob is the main build tool for this project (judges score Bob usage):
+## Demo script (UI)
 
-- Plan mode for architecture and task breakdown
-- Agent mode for feature builds (coverage engine, chat UI, demo controls, tests)
-- Project rules in `SHIFTFIX_RULES.md` so Bob keeps the stack and naming
-- Bob-authored tests kept green before each handoff
-- README documents the Bob-first workflow for the submission page
-
-## Non-goals
-
-Real GroupMe/Slack/SMS, payroll, time clocks, multi-location, real employee data.
+1. Admin ⚙ → **Reset demo**
+2. Posting as **Amanda** → Team chat:  
+   `hey I'm not available for my Monday shift, can someone cover me?`
+3. Open DMs → **Maya** → Accept (or `yes`)
+4. **Arlo** → Decline (or `no`)
+5. **David** → Accept
+6. Check **Schedule** and **Agent Activity**

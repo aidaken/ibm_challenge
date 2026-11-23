@@ -1,9 +1,9 @@
--- ShiftFix — written by IBM Bob
 -- Postgres schema for employees, shifts, coverage, messages, audit.
 
 create type employee_role as enum ('barista', 'cashier', 'manager');
 create type shift_status as enum ('scheduled', 'needs_cover', 'covered', 'cancelled');
-create type coverage_status as enum ('open', 'offering', 'pending_approval', 'filled', 'escalated');
+create type coverage_status as enum ('open', 'planning', 'offering', 'covered', 'filled', 'escalated');
+create type coverage_part_status as enum ('open', 'offering', 'accepted', 'covered');
 create type offer_status as enum ('pending', 'accepted', 'declined', 'timed_out', 'skipped');
 create type message_channel as enum ('group', 'dm');
 create type audit_actor as enum ('agent', 'worker', 'manager');
@@ -38,6 +38,7 @@ create table shifts (
 create table coverage_requests (
   id text primary key,
   shift_id text not null references shifts(id),
+  called_out_by text references employees(id),
   reason text not null,
   status coverage_status not null,
   current_offer_id text,
@@ -45,9 +46,19 @@ create table coverage_requests (
   updated_at timestamptz not null default now()
 );
 
+create table coverage_parts (
+  id text primary key,
+  request_id text not null references coverage_requests(id),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  status coverage_part_status not null default 'open',
+  assigned_employee_id text references employees(id)
+);
+
 create table offers (
   id text primary key,
   request_id text not null references coverage_requests(id),
+  part_id text references coverage_parts(id),
   employee_id text not null references employees(id),
   rank int not null,
   status offer_status not null,
